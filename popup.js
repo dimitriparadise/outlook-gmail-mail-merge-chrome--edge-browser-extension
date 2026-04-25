@@ -7,6 +7,10 @@ let lastTemplateFieldId = 'body';
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'outlookMailMergeState';
 const TEMPLATE_FIELD_IDS = ['subject', 'cc', 'bcc', 'body'];
+const COMPOSE_MODE_HINTS = {
+  outlook: 'Opens Outlook Web drafts. If CC/BCC is present, Outlook Mode uses mailto because Outlook Web may ignore copy recipients.',
+  gmail: 'Opens Gmail compose windows directly. Gmail Mode supports To, CC, BCC, subject, and body without mailto.'
+};
 
 function parseCSV(text) {
   const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim() !== '');
@@ -49,6 +53,7 @@ function getCsvText() {
 async function saveState() {
   const state = {
     csvText: $('csvText').value,
+    composeMode: $('composeMode').value,
     subject: $('subject').value,
     cc: $('cc').value,
     bcc: $('bcc').value,
@@ -69,6 +74,7 @@ async function restoreState() {
   if (!state) return;
 
   $('csvText').value = state.csvText || $('csvText').value;
+  $('composeMode').value = state.composeMode || 'outlook';
   $('subject').value = state.subject || $('subject').value;
   $('cc').value = state.cc || '';
   $('bcc').value = state.bcc || '';
@@ -78,6 +84,7 @@ async function restoreState() {
   generated = Array.isArray(state.generated) ? state.generated : [];
   currentIndex = Number.isInteger(state.currentIndex) ? state.currentIndex : 0;
   renderVariableButtons();
+  renderComposeModeHints();
 
   if (generated.length) {
     $('sendControls').classList.remove('hidden');
@@ -139,6 +146,21 @@ function outlookComposeUrl(msg) {
     + '?' + params.map(([key, value]) => key + '=' + encodeForOutlook(value)).join('&');
 }
 
+function gmailComposeUrl(msg) {
+  const params = [
+    ['view', 'cm'],
+    ['fs', '1'],
+    ['to', msg.email],
+    ['cc', msg.cc],
+    ['bcc', msg.bcc],
+    ['su', msg.subject],
+    ['body', msg.body]
+  ].filter(([, value]) => String(value ?? '').trim() !== '');
+
+  return 'https://mail.google.com/mail/?'
+    + params.map(([key, value]) => key + '=' + encodeForOutlook(value)).join('&');
+}
+
 function mailtoUrl(msg) {
   const params = [
     ['cc', msg.cc],
@@ -156,6 +178,8 @@ function hasCopyRecipients(msg) {
 }
 
 function composeUrl(msg) {
+  if ($('composeMode').value === 'gmail') return gmailComposeUrl(msg);
+
   // Outlook Web deeplinks currently ignore cc/bcc in some tenants. mailto handles those fields reliably
   // through the user's configured mail handler, so use it only when copy recipients are present.
   return hasCopyRecipients(msg) ? mailtoUrl(msg) : outlookComposeUrl(msg);
@@ -164,6 +188,14 @@ function composeUrl(msg) {
 function renderStatus(text, cls = '') {
   $('status').className = cls;
   $('status').textContent = text;
+}
+
+function renderComposeModeHints() {
+  const mode = $('composeMode').value;
+  $('composeModeHint').textContent = COMPOSE_MODE_HINTS[mode] || '';
+  $('copyRecipientHint').innerHTML = mode === 'outlook'
+    ? 'In Outlook Mode, CC/BCC drafts use your browser&apos;s <code>mailto:</code> handler.'
+    : 'In Gmail Mode, CC/BCC are included in the Gmail compose URL.';
 }
 
 function syncRangeInputs() {
@@ -274,6 +306,11 @@ TEMPLATE_FIELD_IDS.forEach(id => {
   });
 });
 
+$('composeMode').addEventListener('change', () => {
+  renderComposeModeHints();
+  saveState();
+});
+
 $('csvText').addEventListener('input', () => {
   saveState();
 });
@@ -350,3 +387,4 @@ $('openRangeBtn').addEventListener('click', async () => {
 });
 
 restoreState();
+renderComposeModeHints();

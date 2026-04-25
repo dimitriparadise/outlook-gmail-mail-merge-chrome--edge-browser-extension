@@ -2,12 +2,12 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Outlook Mail Merge Helper</title>
+  <title>Mail Merge Draft Helper</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
   <main>
-    <h1>Outlook Mail Merge</h1>
+    <h1>Mail Merge Drafts</h1>
     <p class="hint">CSV columns should include at least <b>Name</b> and <b>Email</b>. Other columns can be used as variables like <code>{{Course}}</code>.</p>
 
     <label>1. Student CSV</label>
@@ -22,17 +22,24 @@ John,john@example.com,ISOM 210,A,Friday"></textarea>
       <div id="variableButtons" class="variable-buttons"></div>
     </section>
 
-    <label>2. Subject template</label>
+    <label>2. Compose mode</label>
+    <select id="composeMode">
+      <option value="outlook">Outlook Mode</option>
+      <option value="gmail">Gmail Mode</option>
+    </select>
+    <p id="composeModeHint" class="hint mode-hint"></p>
+
+    <label>3. Subject template</label>
     <input id="subject" value="Reminder for {{Course}}" />
 
-    <label>3. Optional CC</label>
+    <label>4. Optional CC</label>
     <input id="cc" placeholder="Optional: email@example.com or {{CcEmail}}" />
 
-    <label>4. Optional BCC</label>
+    <label>5. Optional BCC</label>
     <input id="bcc" placeholder="Optional: email@example.com or {{BccEmail}}" />
-    <p class="hint mailto-hint">CC/BCC drafts use your browser's <code>mailto:</code> handler. Set Chrome's mail handler if they open in the wrong app.</p>
+    <p id="copyRecipientHint" class="hint mailto-hint"></p>
 
-    <label>5. Body template</label>
+    <label>6. Body template</label>
     <textarea id="body">Hi {{Name}},
 
 This is a quick reminder about {{Course}}.

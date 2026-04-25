@@ -1,6 +1,6 @@
-# Outlook Mail Merge Helper
+# Mail Merge Draft Helper
 
-This folder contains a small Manifest V3 browser extension that helps create personalized Outlook Web email drafts from a CSV list. The extension runs entirely from the popup UI: users import or paste CSV data, write subject and body templates, load the CSV to preview the first generated message, and open Outlook compose drafts one at a time or by selected range.
+This folder contains a small Manifest V3 browser extension that helps create personalized Outlook or Gmail email drafts from a CSV list. The extension runs entirely from the popup UI: users import or paste CSV data, choose Outlook Mode or Gmail Mode, write subject and body templates, generate drafts to preview the first message, and open compose drafts one at a time or by selected range.
 
 ## What It Does
 
@@ -9,7 +9,7 @@ This folder contains a small Manifest V3 browser extension that helps create per
 - Supports template variables in the form `{{ColumnName}}`.
 - Shows variable buttons from the CSV headers so users can insert columns into templates.
 - Generates personalized To, CC, BCC, subject, and body values for each CSV row.
-- Opens Outlook Web compose deeplinks for each generated draft in a background tab.
+- Opens Outlook Web or Gmail compose links for each generated draft in a background tab.
 - Can open the next draft only or open a selected draft range at once.
 - Saves popup state with `chrome.storage.local`, so progress can continue after closing and reopening the popup.
 
@@ -17,10 +17,10 @@ This folder contains a small Manifest V3 browser extension that helps create per
 
 | File | Purpose |
 | --- | --- |
-| `manifest.json` | Defines the extension metadata, popup entry point, permissions, and Outlook host permissions. |
+| `manifest.json` | Defines the extension metadata, popup entry point, permissions, and mail-service host permissions. |
 | `popup.html` | Defines the popup interface for CSV input, variable buttons, recipient templates, preview, status, and draft controls. |
 | `popup.css` | Styles the popup layout, form fields, buttons, status messages, and preview area. |
-| `popup.js` | Implements CSV parsing, template replacement, state persistence, preview generation, and Outlook draft opening. |
+| `popup.js` | Implements CSV parsing, template replacement, state persistence, preview generation, and compose draft opening. |
 
 ## How The Extension Works
 
@@ -32,7 +32,7 @@ This folder contains a small Manifest V3 browser extension that helps create per
 6. `applyTemplate()` replaces placeholders with values from each row.
 7. `makeMessages()` builds the personalized To, CC, BCC, subject, and body values and stores them in memory.
 8. The popup shows the first generated message as a preview.
-9. `Open Next Draft` increments and saves `currentIndex` before opening one Outlook Web compose URL.
+9. `Open Next Draft` increments and saves `currentIndex` before opening one compose URL.
 10. `Open Range` saves progress and opens the selected 1-based draft range in background tabs.
 11. Drafts open in background tabs, so the popup can stay open while the user queues additional drafts.
 
@@ -63,6 +63,15 @@ This is a quick reminder about {{Course}} section {{Section}}, due {{DueDate}}.
 
 The `Email` or `email` column is used as the main To recipient. Optional CC and BCC fields can use fixed email addresses or variables from the CSV.
 
+## Compose Modes
+
+The extension has two compose modes:
+
+- `Outlook Mode`: opens Outlook Web compose links. If a message has CC or BCC recipients, Outlook Mode falls back to `mailto:` because Outlook Web may ignore CC/BCC query parameters.
+- `Gmail Mode`: opens Gmail compose links directly using `https://mail.google.com/mail/?view=cm&fs=1...`. Gmail Mode supports To, CC, BCC, subject, and body without `mailto:`.
+
+Use Gmail Mode if you want CC/BCC to work without configuring Chrome's `mailto:` handler.
+
 ## CC And BCC
 
 The optional CC and BCC fields can be left blank, filled with fixed email addresses, or filled with CSV variables.
@@ -79,11 +88,11 @@ CC: {{CcEmail}}
 BCC: {{BccEmail}}
 ```
 
-Outlook Web compose deeplinks may ignore CC and BCC query parameters. Because of that, this extension uses `mailto:` whenever a generated draft has CC or BCC recipients. The draft will open in whichever mail app or webmail service Chrome is configured to use for `mailto:` links.
+Outlook Web compose deeplinks may ignore CC and BCC query parameters. Because of that, Outlook Mode uses `mailto:` whenever a generated draft has CC or BCC recipients. Gmail Mode does not need `mailto:` for CC/BCC.
 
 ## Setting Chrome Mailto Handling
 
-Use these steps if CC/BCC drafts open in the wrong app, or if nothing opens when using CC/BCC.
+Use these steps if Outlook Mode CC/BCC drafts open in the wrong app, or if nothing opens when using CC/BCC. Gmail Mode does not require this setup.
 
 1. Open Chrome.
 2. Go to `chrome://settings/handlers`.
@@ -111,16 +120,17 @@ If the handler icon does not appear, remove old blocked/default email handlers f
 The extension declares:
 
 - `storage`: saves CSV text, templates, generated drafts, and progress locally.
-- `tabs`: opens each generated Outlook compose draft in a background tab.
-- Outlook host permissions for `https://outlook.office.com/*` and `https://outlook.live.com/*`.
+- `tabs`: opens each generated compose draft in a background tab.
+- Host permissions for Gmail and Outlook compose pages.
 
 ## Implementation Notes
 
 - CSV parsing is implemented locally in `popup.js`. It handles quoted fields and escaped quotes, but it is intentionally lightweight.
 - Uploaded file contents are copied into the CSV textarea because browser extension file inputs cannot be restored after the popup closes.
-- Outlook compose URLs use `encodeURIComponent()` instead of `URLSearchParams` because Outlook may show `+` characters literally in some compose fields.
-- Outlook Web deeplinks may ignore CC/BCC, so messages with CC or BCC use `mailto:` and depend on the user's configured mail handler.
-- Progress is saved before opening each Outlook tab, because extension popups can close automatically when browser focus changes.
+- Compose URLs use `encodeURIComponent()` instead of `URLSearchParams` because some mail compose pages may show `+` characters literally in some fields.
+- Outlook Web deeplinks may ignore CC/BCC, so Outlook Mode messages with CC or BCC use `mailto:` and depend on the user's configured mail handler.
+- Gmail Mode uses Gmail compose URLs and does not depend on `mailto:`.
+- Progress is saved before opening each compose tab, because extension popups can close automatically when browser focus changes.
 - The extension opens drafts only; it does not automatically send email.
 
 ## Current Limitations
