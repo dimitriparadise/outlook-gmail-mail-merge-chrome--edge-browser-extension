@@ -1,0 +1,48 @@
+body {
+  width: 430px;
+  margin: 0;
+  font-family: Arial, sans-serif;
+  color: #1f2937;
+  background: #f8fafc;
+}
+main { padding: 14px; }
+h1 { font-size: 18px; margin: 0 0 8px; }
+.hint { font-size: 12px; line-height: 1.4; color: #475569; }
+label { display: block; font-weight: 700; margin-top: 12px; font-size: 13px; }
+input, textarea {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 13px;
+  background: white;
+}
+textarea { min-height: 95px; resize: vertical; }
+#csvText { min-height: 70px; }
+.row { display: flex; gap: 8px; margin-top: 12px; }
+button {
+  flex: 1;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: #2563eb;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}
+button.secondary { background: #475569; }
+#status, #preview {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.hidden { display: none; }
+.error { color: #b91c1c; }
+.ok { color: #166534; }
+code { background: #e2e8f0; padding: 1px 4px; border-radius: 4px; }

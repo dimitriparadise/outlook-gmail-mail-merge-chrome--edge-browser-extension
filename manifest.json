@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Outlook Mail Merge Helper",
+  "version": "0.1.0",
+  "description": "Import a CSV list and generate personalized Outlook Web / mailto drafts.",
+  "action": {
+    "default_title": "Outlook Mail Merge",
+    "default_popup": "popup.html"
+  },
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "https://outlook.office.com/*",
+    "https://outlook.live.com/*"
+  ]
+}

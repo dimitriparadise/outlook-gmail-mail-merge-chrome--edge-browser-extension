@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Outlook Mail Merge Helper</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <main>
+    <h1>Outlook Mail Merge</h1>
+    <p class="hint">CSV columns should include at least <b>Name</b> and <b>Email</b>. Other columns can be used as variables like <code>{{Course}}</code>.</p>
+
+    <label>1. Student CSV</label>
+    <input id="csvFile" type="file" accept=".csv,text/csv" />
+    <textarea id="csvText" placeholder="Or paste CSV here:
+Name,Email,Course
+John,john@example.com,ISOM 210"></textarea>
+
+    <label>2. Subject template</label>
+    <input id="subject" value="Reminder for {{Course}}" />
+
+    <label>3. Body template</label>
+    <textarea id="body">Hi {{Name}},
+
+This is a quick reminder about {{Course}}.
+
+Best,
+Professor He</textarea>
+
+    <div class="row">
+      <button id="previewBtn">Preview</button>
+      <button id="startBtn">Start Merge</button>
+    </div>
+
+    <section id="status"></section>
+    <section id="preview"></section>
+
+    <div class="row hidden" id="sendControls">
+      <button id="openNextBtn">Open Next Draft</button>
+      <button id="copyBodyBtn">Copy Body</button>
+    </div>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
