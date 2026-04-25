@@ -18,7 +18,7 @@ John,john@example.com,ISOM 210,A,Friday"></textarea>
 
     <section class="variable-panel">
       <label>Template variables</label>
-      <p class="hint">Click Preview or Start Merge to load variables from your CSV columns.</p>
+      <p class="hint">Click Generate Drafts after uploading or pasting CSV data to load variables.</p>
       <div id="variableButtons" class="variable-buttons"></div>
     </section>
 
@@ -30,6 +30,7 @@ John,john@example.com,ISOM 210,A,Friday"></textarea>
 
     <label>4. Optional BCC</label>
     <input id="bcc" placeholder="Optional: email@example.com or {{BccEmail}}" />
+    <p class="hint mailto-hint">CC/BCC drafts use your browser's <code>mailto:</code> handler. Set Chrome's mail handler if they open in the wrong app.</p>
 
     <label>5. Body template</label>
     <textarea id="body">Hi {{Name}},
@@ -40,17 +41,26 @@ Best,
 Professor He</textarea>
 
     <div class="row">
-      <button id="previewBtn">Preview</button>
-      <button id="startBtn">Start Merge</button>
+      <button id="loadBtn">Generate Drafts</button>
     </div>
 
     <section id="status"></section>
     <section id="preview"></section>
 
-    <div class="row hidden" id="sendControls">
+    <section class="hidden" id="sendControls">
       <button id="openNextBtn">Open Next Draft</button>
-      <button id="copyBodyBtn">Copy Body</button>
-    </div>
+      <div class="range-controls">
+        <label>
+          From
+          <input id="rangeStart" type="number" min="1" />
+        </label>
+        <label>
+          To
+          <input id="rangeEnd" type="number" min="1" />
+        </label>
+        <button id="openRangeBtn">Open Range</button>
+      </div>
+    </section>
   </main>
   <script src="popup.js"></script>
 </body>

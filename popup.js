@@ -81,6 +81,7 @@ async function restoreState() {
 
   if (generated.length) {
     $('sendControls').classList.remove('hidden');
+    syncRangeInputs();
     renderStatus(`Restored: ${currentIndex}/${generated.length} drafts opened. Click “Open Next Draft” to continue.`, 'ok');
     const next = generated[Math.min(currentIndex, generated.length - 1)];
     if (next) {
@@ -150,9 +151,28 @@ function mailtoUrl(msg) {
     + '?' + params.map(([key, value]) => key + '=' + encodeForOutlook(value)).join('&');
 }
 
+function hasCopyRecipients(msg) {
+  return String(msg.cc ?? '').trim() !== '' || String(msg.bcc ?? '').trim() !== '';
+}
+
+function composeUrl(msg) {
+  // Outlook Web deeplinks currently ignore cc/bcc in some tenants. mailto handles those fields reliably
+  // through the user's configured mail handler, so use it only when copy recipients are present.
+  return hasCopyRecipients(msg) ? mailtoUrl(msg) : outlookComposeUrl(msg);
+}
+
 function renderStatus(text, cls = '') {
   $('status').className = cls;
   $('status').textContent = text;
+}
+
+function syncRangeInputs() {
+  const total = generated.length;
+  const next = Math.min(currentIndex + 1, total || 1);
+  $('rangeStart').max = total || 1;
+  $('rangeEnd').max = total || 1;
+  $('rangeStart').value = next;
+  $('rangeEnd').value = total || 1;
 }
 
 function getHeadersFromRows(rowList) {
@@ -202,71 +222,131 @@ function messagePreview(title, msg) {
   return lines.join('\n');
 }
 
+function renderNextPreview() {
+  if (!generated.length) return;
+
+  const next = generated[Math.min(currentIndex, generated.length - 1)];
+  if (next) {
+    $('preview').textContent = messagePreview('Next draft preview:', next);
+  }
+}
+
+async function openDraftTab(msg) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.create({ url: composeUrl(msg), active: false }, () => {
+      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+      else resolve();
+    });
+  });
+}
+
+function getSelectedRange() {
+  const total = generated.length;
+  const start = Number.parseInt($('rangeStart').value, 10);
+  const end = Number.parseInt($('rangeEnd').value, 10);
+
+  if (!Number.isInteger(start) || !Number.isInteger(end)) {
+    throw new Error('Please enter a valid From and To range.');
+  }
+  if (start < 1 || end < 1 || start > total || end > total) {
+    throw new Error(`Range must be between 1 and ${total}.`);
+  }
+  if (start > end) {
+    throw new Error('From must be less than or equal to To.');
+  }
+
+  return { startIndex: start - 1, endIndex: end - 1 };
+}
+
 TEMPLATE_FIELD_IDS.forEach(id => {
   $(id).addEventListener('focus', () => {
     lastTemplateFieldId = id;
   });
 });
 
-['csvText', 'subject', 'cc', 'bcc', 'body'].forEach(id => {
+['subject', 'cc', 'bcc', 'body'].forEach(id => {
   $(id).addEventListener('input', () => {
-    // If templates/CSV change, keep typed content but require Start Merge again to regenerate drafts.
+    if (rows.length) {
+      makeMessages();
+      renderNextPreview();
+    }
     saveState();
   });
 });
 
-$('previewBtn').addEventListener('click', async () => {
-  try {
-    await loadRows();
-    makeMessages();
-    await saveState();
-    const first = generated[0];
-    $('preview').textContent = `Loaded ${generated.length} rows.\n\n` + messagePreview('First preview:', first);
-    renderStatus('Preview ready.', 'ok');
-  } catch (e) {
-    renderStatus(e.message, 'error');
-  }
+$('csvText').addEventListener('input', () => {
+  saveState();
 });
 
-$('startBtn').addEventListener('click', async () => {
+$('loadBtn').addEventListener('click', async () => {
   try {
     await loadRows();
     makeMessages();
     currentIndex = 0;
     await saveState();
     $('sendControls').classList.remove('hidden');
-    renderStatus(`Ready: ${generated.length} personalized drafts. Click “Open Next Draft.”`, 'ok');
+    syncRangeInputs();
+    const first = generated[0];
+    $('preview').textContent = `Loaded ${generated.length} rows.\n\n` + messagePreview('First preview:', first);
+    renderStatus(`Ready: ${generated.length} personalized drafts. Review the preview, then open drafts.`, 'ok');
   } catch (e) {
     renderStatus(e.message, 'error');
   }
 });
 
 $('openNextBtn').addEventListener('click', async () => {
-  if (!generated.length) return renderStatus('Please start merge first.', 'error');
+  if (!generated.length) return renderStatus('Please generate drafts first.', 'error');
   if (currentIndex >= generated.length) return renderStatus('All drafts opened.', 'ok');
 
+  makeMessages();
   const msg = generated[currentIndex];
   const openedIndex = currentIndex + 1;
   currentIndex = openedIndex;
   await saveState();
 
-  chrome.tabs.create({ url: outlookComposeUrl(msg), active: false }, async () => {
-    if (chrome.runtime.lastError) {
-      currentIndex = openedIndex - 1;
-      await saveState();
-      renderStatus(`Could not open draft: ${chrome.runtime.lastError.message}`, 'error');
-      return;
-    }
-
-    renderStatus(`Opened draft ${currentIndex}/${generated.length} in a background tab: ${msg.email}\n\nKeep clicking “Open Next Draft” to queue the rest, or open the new Outlook tabs to review and send.`, 'ok');
-  });
+  try {
+    await openDraftTab(msg);
+    syncRangeInputs();
+    renderStatus(`Opened draft ${currentIndex}/${generated.length}: ${msg.email}\n\nKeep clicking “Open Next Draft” to queue the rest, or review the opened drafts before sending.`, 'ok');
+  } catch (e) {
+    currentIndex = openedIndex - 1;
+    await saveState();
+    syncRangeInputs();
+    renderStatus(`Could not open draft: ${e.message}`, 'error');
+  }
 });
 
-$('copyBodyBtn').addEventListener('click', async () => {
-  if (!generated.length) return renderStatus('Please start merge first.', 'error');
-  const idx = Math.min(currentIndex, generated.length - 1);
-  await navigator.clipboard.writeText(generated[idx].body);
-  renderStatus(`Copied body for row ${idx + 1}.`, 'ok');
+$('openRangeBtn').addEventListener('click', async () => {
+  if (!generated.length) return renderStatus('Please generate drafts first.', 'error');
+
+  makeMessages();
+  let range;
+  try {
+    range = getSelectedRange();
+  } catch (e) {
+    return renderStatus(e.message, 'error');
+  }
+
+  const { startIndex, endIndex } = range;
+  const selected = generated.slice(startIndex, endIndex + 1);
+  const previousIndex = currentIndex;
+  currentIndex = Math.max(currentIndex, endIndex + 1);
+  await saveState();
+
+  let openedCount = 0;
+  try {
+    for (const msg of selected) {
+      await openDraftTab(msg);
+      openedCount += 1;
+    }
+    syncRangeInputs();
+    renderStatus(`Opened ${selected.length} drafts (${startIndex + 1}-${endIndex + 1}/${generated.length}).\n\nReview the opened drafts before sending.`, 'ok');
+  } catch (e) {
+    currentIndex = Math.max(previousIndex, startIndex + openedCount);
+    await saveState();
+    syncRangeInputs();
+    renderStatus(`Stopped after opening ${openedCount}/${selected.length} selected drafts: ${e.message}`, 'error');
+  }
 });
 
 restoreState();

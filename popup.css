@@ -8,6 +8,7 @@ body {
 main { padding: 14px; }
 h1 { font-size: 18px; margin: 0 0 8px; }
 .hint { font-size: 12px; line-height: 1.4; color: #475569; }
+.mailto-hint { margin: 6px 0 0; }
 label { display: block; font-weight: 700; margin-top: 12px; font-size: 13px; }
 input, textarea {
   box-sizing: border-box;
@@ -50,6 +51,25 @@ textarea { min-height: 95px; resize: vertical; }
   font-size: 12px;
 }
 .row { display: flex; gap: 8px; margin-top: 12px; }
+#sendControls {
+  margin-top: 12px;
+}
+#sendControls > button {
+  width: 100%;
+}
+.range-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.3fr;
+  gap: 8px;
+  align-items: end;
+  margin-top: 10px;
+}
+.range-controls label {
+  margin-top: 0;
+}
+.range-controls input {
+  min-width: 0;
+}
 button {
   flex: 1;
   padding: 9px 10px;
