@@ -1,6 +1,6 @@
 # Mail Merge Draft Helper 中文说明
 
-这是一个 Manifest V3 浏览器插件，用来根据 CSV 名单生成个性化 Outlook 或 Gmail 邮件草稿。插件在弹窗界面中运行：用户可以上传 CSV 文件，或直接粘贴 CSV 文本；然后选择 Outlook Mode 或 Gmail Mode，填写邮件主题、正文、可选 CC/BCC；最后按顺序打开单封草稿，或按指定范围批量打开草稿。
+这是一个 Manifest V3 浏览器插件，用来根据 CSV 名单生成个性化 Outlook 或 Gmail 邮件草稿。插件在弹窗界面中运行：用户可以上传 CSV 文件，或直接粘贴 CSV 文本；然后选择 Outlook Mode 或 Gmail Mode，填写邮件主题、正文、可选 CC/BCC；最后浏览草稿预览，按顺序打开单封草稿，或按指定范围批量打开草稿。
 
 ## 主要功能
 
@@ -10,7 +10,8 @@
 - 点击 `Generate Drafts` 后，会根据 CSV header 自动生成变量按钮。
 - 支持个性化 To、CC、BCC、Subject 和 Body。
 - 支持 Outlook Mode 和 Gmail Mode。
-- 支持一次打开下一封草稿，也支持按范围批量打开草稿。
+- 支持上一封/下一封预览。
+- 支持一次打开下一封草稿，也支持按范围批量打开草稿；批量打开时每 500ms 打开一个 tab。
 - 使用 `chrome.storage.local` 保存当前内容和进度，关闭插件弹窗后可以继续。
 
 ## 文件说明
@@ -30,8 +31,9 @@
 4. 插件会读取 CSV，并显示第一封邮件的预览。
 5. 如果 CSV 有更多列，插件会生成对应变量按钮，例如 `{{Name}}`、`{{Course}}`。
 6. 可以把变量插入 Subject、CC、BCC 或 Body。
-7. 点击 `Open Next Draft` 打开下一封草稿。
-8. 或者填写 `From` / `To`，点击 `Open Range` 一次打开某个范围内的草稿。
+7. 可以用 `Previous Preview` / `Next Preview` 检查不同收件人的草稿内容。
+8. 点击 `Open Next Draft` 打开下一封草稿。
+9. 或者填写 `From` / `To`，点击 `Open Range` 按 500ms 间隔打开某个范围内的草稿。
 
 范围从 1 开始计数。例如 CSV 有 30 行，想一次打开第 6 到第 20 封，就填写：
 
@@ -154,6 +156,7 @@ Gmail Mode 不需要 `mailto:`，会直接使用 Gmail compose URL，并支持 T
 - Compose 链接使用 `encodeURIComponent()` 编码，避免空格和换行被错误处理。
 - Outlook Mode 中有 CC/BCC 的草稿使用 `mailto:`，因为 Outlook Web deeplink 可能忽略 CC/BCC。
 - Gmail Mode 使用 Gmail compose URL，不依赖 `mailto:`。
+- 按范围打开草稿时，每封之间等待 500ms，降低浏览器拦截大量新 tab 的概率。
 - 插件只打开草稿，不会自动发送邮件。
 
 ## 当前限制
@@ -162,4 +165,4 @@ Gmail Mode 不需要 `mailto:`，会直接使用 Gmail compose URL，并支持 T
 - 不支持附件。
 - 不支持富文本编辑器。
 - 不检查重复收件人。
-- 一次打开很大的范围时，浏览器可能会限制或拦截大量新 tab。
+- 一次打开特别大的范围时，浏览器仍然可能会限制或拦截大量新 tab。

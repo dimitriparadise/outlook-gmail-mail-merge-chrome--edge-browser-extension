@@ -1,11 +1,13 @@
 let rows = [];
 let currentIndex = 0;
+let previewIndex = 0;
 let generated = [];
 let csvHeaders = [];
 let lastTemplateFieldId = 'body';
 
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'outlookMailMergeState';
+const OPEN_RANGE_DELAY_MS = 500;
 const TEMPLATE_FIELD_IDS = ['subject', 'cc', 'bcc', 'body'];
 const COMPOSE_MODE_HINTS = {
   outlook: 'Opens Outlook Web drafts. If CC/BCC is present, Outlook Mode uses mailto because Outlook Web may ignore copy recipients.',
@@ -62,6 +64,7 @@ async function saveState() {
     csvHeaders,
     generated,
     currentIndex,
+    previewIndex,
     hasStarted: generated.length > 0,
     updatedAt: Date.now()
   };
@@ -83,17 +86,17 @@ async function restoreState() {
   csvHeaders = Array.isArray(state.csvHeaders) ? state.csvHeaders : getHeadersFromRows(rows);
   generated = Array.isArray(state.generated) ? state.generated : [];
   currentIndex = Number.isInteger(state.currentIndex) ? state.currentIndex : 0;
+  previewIndex = Number.isInteger(state.previewIndex) ? state.previewIndex : currentIndex;
   renderVariableButtons();
   renderComposeModeHints();
 
   if (generated.length) {
+    previewIndex = clampPreviewIndex(previewIndex);
     $('sendControls').classList.remove('hidden');
+    $('previewControls').classList.remove('hidden');
     syncRangeInputs();
     renderStatus(`Restored: ${currentIndex}/${generated.length} drafts opened. Click “Open Next Draft” to continue.`, 'ok');
-    const next = generated[Math.min(currentIndex, generated.length - 1)];
-    if (next) {
-      $('preview').textContent = messagePreview('Next draft preview:', next);
-    }
+    renderPreview();
   }
 }
 
@@ -207,6 +210,20 @@ function syncRangeInputs() {
   $('rangeEnd').value = total || 1;
 }
 
+function syncPreviewControls() {
+  const total = generated.length;
+  const hasMessages = total > 0;
+  $('previewControls').classList.toggle('hidden', !hasMessages);
+  $('previewCounter').textContent = hasMessages ? `${previewIndex + 1}/${total}` : '';
+  $('previewPrevBtn').disabled = !hasMessages || previewIndex <= 0;
+  $('previewNextBtn').disabled = !hasMessages || previewIndex >= total - 1;
+}
+
+function clampPreviewIndex(index) {
+  if (!generated.length) return 0;
+  return Math.min(Math.max(index, 0), generated.length - 1);
+}
+
 function getHeadersFromRows(rowList) {
   const seen = new Set();
   rowList.forEach(row => {
@@ -254,13 +271,15 @@ function messagePreview(title, msg) {
   return lines.join('\n');
 }
 
-function renderNextPreview() {
+function renderPreview(title) {
   if (!generated.length) return;
 
-  const next = generated[Math.min(currentIndex, generated.length - 1)];
-  if (next) {
-    $('preview').textContent = messagePreview('Next draft preview:', next);
+  previewIndex = clampPreviewIndex(previewIndex);
+  const msg = generated[previewIndex];
+  if (msg) {
+    $('preview').textContent = messagePreview(title || `Preview draft ${previewIndex + 1} of ${generated.length}:`, msg);
   }
+  syncPreviewControls();
 }
 
 async function openDraftTab(msg) {
@@ -270,6 +289,16 @@ async function openDraftTab(msg) {
       else resolve();
     });
   });
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function setRangeOpening(isOpening) {
+  $('openRangeBtn').disabled = isOpening;
+  $('openNextBtn').disabled = isOpening;
+  $('openRangeBtn').textContent = isOpening ? 'Opening...' : 'Open Range';
 }
 
 function getSelectedRange() {
@@ -300,7 +329,7 @@ TEMPLATE_FIELD_IDS.forEach(id => {
   $(id).addEventListener('input', () => {
     if (rows.length) {
       makeMessages();
-      renderNextPreview();
+      renderPreview();
     }
     saveState();
   });
@@ -320,15 +349,30 @@ $('loadBtn').addEventListener('click', async () => {
     await loadRows();
     makeMessages();
     currentIndex = 0;
+    previewIndex = 0;
     await saveState();
     $('sendControls').classList.remove('hidden');
+    $('previewControls').classList.remove('hidden');
     syncRangeInputs();
-    const first = generated[0];
-    $('preview').textContent = `Loaded ${generated.length} rows.\n\n` + messagePreview('First preview:', first);
+    renderPreview(`Loaded ${generated.length} rows.\n\nFirst preview:`);
     renderStatus(`Ready: ${generated.length} personalized drafts. Review the preview, then open drafts.`, 'ok');
   } catch (e) {
     renderStatus(e.message, 'error');
   }
+});
+
+$('previewPrevBtn').addEventListener('click', async () => {
+  if (!generated.length) return;
+  previewIndex = clampPreviewIndex(previewIndex - 1);
+  renderPreview();
+  await saveState();
+});
+
+$('previewNextBtn').addEventListener('click', async () => {
+  if (!generated.length) return;
+  previewIndex = clampPreviewIndex(previewIndex + 1);
+  renderPreview();
+  await saveState();
 });
 
 $('openNextBtn').addEventListener('click', async () => {
@@ -343,7 +387,10 @@ $('openNextBtn').addEventListener('click', async () => {
 
   try {
     await openDraftTab(msg);
+    previewIndex = clampPreviewIndex(currentIndex);
+    await saveState();
     syncRangeInputs();
+    renderPreview();
     renderStatus(`Opened draft ${currentIndex}/${generated.length}: ${msg.email}\n\nKeep clicking “Open Next Draft” to queue the rest, or review the opened drafts before sending.`, 'ok');
   } catch (e) {
     currentIndex = openedIndex - 1;
@@ -371,18 +418,28 @@ $('openRangeBtn').addEventListener('click', async () => {
   await saveState();
 
   let openedCount = 0;
+  setRangeOpening(true);
   try {
-    for (const msg of selected) {
+    for (const [index, msg] of selected.entries()) {
+      renderStatus(`Opening draft ${index + 1}/${selected.length} from selected range...`, 'ok');
       await openDraftTab(msg);
       openedCount += 1;
+      if (openedCount < selected.length) {
+        await sleep(OPEN_RANGE_DELAY_MS);
+      }
     }
+    previewIndex = clampPreviewIndex(currentIndex);
+    await saveState();
     syncRangeInputs();
+    renderPreview();
     renderStatus(`Opened ${selected.length} drafts (${startIndex + 1}-${endIndex + 1}/${generated.length}).\n\nReview the opened drafts before sending.`, 'ok');
   } catch (e) {
     currentIndex = Math.max(previousIndex, startIndex + openedCount);
     await saveState();
     syncRangeInputs();
     renderStatus(`Stopped after opening ${openedCount}/${selected.length} selected drafts: ${e.message}`, 'error');
+  } finally {
+    setRangeOpening(false);
   }
 });
 

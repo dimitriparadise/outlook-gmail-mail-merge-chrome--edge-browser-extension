@@ -1,6 +1,6 @@
 # Mail Merge Draft Helper
 
-This folder contains a small Manifest V3 browser extension that helps create personalized Outlook or Gmail email drafts from a CSV list. The extension runs entirely from the popup UI: users import or paste CSV data, choose Outlook Mode or Gmail Mode, write subject and body templates, generate drafts to preview the first message, and open compose drafts one at a time or by selected range.
+This folder contains a small Manifest V3 browser extension that helps create personalized Outlook or Gmail email drafts from a CSV list. The extension runs entirely from the popup UI: users import or paste CSV data, choose Outlook Mode or Gmail Mode, write subject and body templates, generate drafts, browse previews, and open compose drafts one at a time or by selected range.
 
 ## What It Does
 
@@ -9,8 +9,9 @@ This folder contains a small Manifest V3 browser extension that helps create per
 - Supports template variables in the form `{{ColumnName}}`.
 - Shows variable buttons from the CSV headers so users can insert columns into templates.
 - Generates personalized To, CC, BCC, subject, and body values for each CSV row.
+- Supports previous/next preview navigation across generated drafts.
 - Opens Outlook Web or Gmail compose links for each generated draft in a background tab.
-- Can open the next draft only or open a selected draft range at once.
+- Can open the next draft only or open a selected draft range with a 500ms delay between tabs.
 - Saves popup state with `chrome.storage.local`, so progress can continue after closing and reopening the popup.
 
 ## Folder Contents
@@ -31,9 +32,9 @@ This folder contains a small Manifest V3 browser extension that helps create per
 5. `Generate Drafts` renders one insert button for each CSV header, such as `{{Name}}`, `{{Course}}`, or `{{DueDate}}`.
 6. `applyTemplate()` replaces placeholders with values from each row.
 7. `makeMessages()` builds the personalized To, CC, BCC, subject, and body values and stores them in memory.
-8. The popup shows the first generated message as a preview.
+8. The popup shows the first generated message as a preview and lets the user move through previews.
 9. `Open Next Draft` increments and saves `currentIndex` before opening one compose URL.
-10. `Open Range` saves progress and opens the selected 1-based draft range in background tabs.
+10. `Open Range` saves progress and opens the selected 1-based draft range in background tabs, waiting 500ms between tabs.
 11. Drafts open in background tabs, so the popup can stay open while the user queues additional drafts.
 
 ## CSV Format
@@ -131,6 +132,7 @@ The extension declares:
 - Outlook Web deeplinks may ignore CC/BCC, so Outlook Mode messages with CC or BCC use `mailto:` and depend on the user's configured mail handler.
 - Gmail Mode uses Gmail compose URLs and does not depend on `mailto:`.
 - Progress is saved before opening each compose tab, because extension popups can close automatically when browser focus changes.
+- Range opening waits 500ms between tabs to reduce the chance of browser popup/tab throttling.
 - The extension opens drafts only; it does not automatically send email.
 
 ## Current Limitations
@@ -139,4 +141,4 @@ The extension declares:
 - There is no attachment support.
 - There is no rich-text email editor.
 - There is no duplicate-recipient detection.
-- Opening a large range at once may trigger browser popup/tab throttling if the range is very large.
+- Opening a very large range may still trigger browser popup/tab throttling.
