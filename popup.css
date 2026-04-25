@@ -21,6 +21,34 @@ input, textarea {
 }
 textarea { min-height: 95px; resize: vertical; }
 #csvText { min-height: 70px; }
+.variable-panel {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: white;
+}
+.variable-panel label { margin-top: 0; }
+.variable-panel .hint { margin: 6px 0 0; }
+.variable-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.variable-buttons:empty::before {
+  content: "No variables loaded yet.";
+  color: #64748b;
+  font-size: 12px;
+}
+.variable-button {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: 12px;
+}
 .row { display: flex; gap: 8px; margin-top: 12px; }
 button {
   flex: 1;

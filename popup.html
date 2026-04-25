@@ -13,13 +13,25 @@
     <label>1. Student CSV</label>
     <input id="csvFile" type="file" accept=".csv,text/csv" />
     <textarea id="csvText" placeholder="Or paste CSV here:
-Name,Email,Course
-John,john@example.com,ISOM 210"></textarea>
+Name,Email,Course,Section,DueDate
+John,john@example.com,ISOM 210,A,Friday"></textarea>
+
+    <section class="variable-panel">
+      <label>Template variables</label>
+      <p class="hint">Click Preview or Start Merge to load variables from your CSV columns.</p>
+      <div id="variableButtons" class="variable-buttons"></div>
+    </section>
 
     <label>2. Subject template</label>
     <input id="subject" value="Reminder for {{Course}}" />
 
-    <label>3. Body template</label>
+    <label>3. Optional CC</label>
+    <input id="cc" placeholder="Optional: email@example.com or {{CcEmail}}" />
+
+    <label>4. Optional BCC</label>
+    <input id="bcc" placeholder="Optional: email@example.com or {{BccEmail}}" />
+
+    <label>5. Body template</label>
     <textarea id="body">Hi {{Name}},
 
 This is a quick reminder about {{Course}}.

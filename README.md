@@ -7,7 +7,8 @@ This folder contains a small Manifest V3 browser extension that helps create per
 - Reads recipient data from an uploaded CSV file or pasted CSV text.
 - Requires an `Email` or `email` column for usable rows.
 - Supports template variables in the form `{{ColumnName}}`.
-- Generates a personalized subject and body for each CSV row.
+- Shows variable buttons from the CSV headers so users can insert columns into templates.
+- Generates personalized To, CC, BCC, subject, and body values for each CSV row.
 - Opens Outlook Web compose deeplinks for each generated draft in a background tab.
 - Saves popup state with `chrome.storage.local`, so progress can continue after closing and reopening the popup.
 - Provides a `Copy Body` fallback for manually pasting the generated message body.
@@ -17,7 +18,7 @@ This folder contains a small Manifest V3 browser extension that helps create per
 | File | Purpose |
 | --- | --- |
 | `manifest.json` | Defines the extension metadata, popup entry point, permissions, and Outlook host permissions. |
-| `popup.html` | Defines the popup interface for CSV input, templates, preview, status, and draft controls. |
+| `popup.html` | Defines the popup interface for CSV input, variable buttons, recipient templates, preview, status, and draft controls. |
 | `popup.css` | Styles the popup layout, form fields, buttons, status messages, and preview area. |
 | `popup.js` | Implements CSV parsing, template replacement, state persistence, preview generation, and Outlook draft opening. |
 
@@ -27,10 +28,11 @@ This folder contains a small Manifest V3 browser extension that helps create per
 2. `popup.js` restores any saved CSV text, templates, generated messages, and progress from `chrome.storage.local`.
 3. The user uploads or pastes CSV data.
 4. `parseCSV()` converts the CSV text into row objects using the header row as keys.
-5. `applyTemplate()` replaces placeholders such as `{{Name}}` or `{{Course}}` with values from each row.
-6. `makeMessages()` builds the personalized messages and stores them in memory.
-7. `Open Next Draft` increments and saves `currentIndex` before opening the Outlook Web compose URL.
-8. The draft opens in a background tab, so the popup can stay open while the user queues additional drafts.
+5. The popup renders one insert button for each CSV header, such as `{{Name}}`, `{{Course}}`, or `{{DueDate}}`.
+6. `applyTemplate()` replaces placeholders with values from each row.
+7. `makeMessages()` builds the personalized To, CC, BCC, subject, and body values and stores them in memory.
+8. `Open Next Draft` increments and saves `currentIndex` before opening the Outlook Web compose URL.
+9. The draft opens in a background tab, so the popup can stay open while the user queues additional drafts.
 
 ## CSV Format
 
@@ -39,21 +41,25 @@ The CSV must include a header row and at least one data row. It must include eit
 Example:
 
 ```csv
-Name,Email,Course
-John,john@example.com,ISOM 210
-Jane,jane@example.com,ISOM 340
+Name,Email,Course,Section,DueDate,CcEmail,BccEmail
+John,john@example.com,ISOM 210,A,Friday,ta@example.com,archive@example.com
+Jane,jane@example.com,ISOM 340,B,Monday,ta@example.com,archive@example.com
 ```
 
 Any header can be used as a template variable:
 
 ```text
+CC: {{CcEmail}}
+BCC: {{BccEmail}}
 Subject: Reminder for {{Course}}
 
 Body:
 Hi {{Name}},
 
-This is a quick reminder about {{Course}}.
+This is a quick reminder about {{Course}} section {{Section}}, due {{DueDate}}.
 ```
+
+The `Email` or `email` column is used as the main To recipient. Optional CC and BCC fields can use fixed email addresses or variables from the CSV.
 
 ## Loading The Extension Locally
 

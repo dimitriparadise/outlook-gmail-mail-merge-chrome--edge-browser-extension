@@ -1,9 +1,12 @@
 let rows = [];
 let currentIndex = 0;
 let generated = [];
+let csvHeaders = [];
+let lastTemplateFieldId = 'body';
 
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'outlookMailMergeState';
+const TEMPLATE_FIELD_IDS = ['subject', 'cc', 'bcc', 'body'];
 
 function parseCSV(text) {
   const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim() !== '');
@@ -26,6 +29,7 @@ function parseCSV(text) {
   };
 
   const headers = parseLine(lines[0]).map(h => h.trim());
+  csvHeaders = headers;
   return lines.slice(1).map(line => {
     const values = parseLine(line);
     const obj = {};
@@ -46,8 +50,11 @@ async function saveState() {
   const state = {
     csvText: $('csvText').value,
     subject: $('subject').value,
+    cc: $('cc').value,
+    bcc: $('bcc').value,
     body: $('body').value,
     rows,
+    csvHeaders,
     generated,
     currentIndex,
     hasStarted: generated.length > 0,
@@ -63,17 +70,21 @@ async function restoreState() {
 
   $('csvText').value = state.csvText || $('csvText').value;
   $('subject').value = state.subject || $('subject').value;
+  $('cc').value = state.cc || '';
+  $('bcc').value = state.bcc || '';
   $('body').value = state.body || $('body').value;
   rows = Array.isArray(state.rows) ? state.rows : [];
+  csvHeaders = Array.isArray(state.csvHeaders) ? state.csvHeaders : getHeadersFromRows(rows);
   generated = Array.isArray(state.generated) ? state.generated : [];
   currentIndex = Number.isInteger(state.currentIndex) ? state.currentIndex : 0;
+  renderVariableButtons();
 
   if (generated.length) {
     $('sendControls').classList.remove('hidden');
     renderStatus(`Restored: ${currentIndex}/${generated.length} drafts opened. Click “Open Next Draft” to continue.`, 'ok');
     const next = generated[Math.min(currentIndex, generated.length - 1)];
     if (next) {
-      $('preview').textContent = `Next draft preview:\nTo: ${next.email}\nSubject: ${next.subject}\n\n${next.body}`;
+      $('preview').textContent = messagePreview('Next draft preview:', next);
     }
   }
 }
@@ -88,18 +99,23 @@ async function loadRows() {
   }
   rows = parseCSV(text);
   if (!rows.length) throw new Error('No usable rows found. Make sure you have an Email column.');
+  renderVariableButtons();
   await saveState();
   return rows;
 }
 
 function makeMessages() {
   const subjectTemplate = $('subject').value;
+  const ccTemplate = $('cc').value;
+  const bccTemplate = $('bcc').value;
   const bodyTemplate = $('body').value;
   generated = rows.map(row => {
     const email = row.Email || row.email;
     const subject = applyTemplate(subjectTemplate, row);
+    const cc = applyTemplate(ccTemplate, row);
+    const bcc = applyTemplate(bccTemplate, row);
     const body = applyTemplate(bodyTemplate, row);
-    return { email, subject, body, row };
+    return { email, cc, bcc, subject, body, row };
   });
 }
 
@@ -110,16 +126,28 @@ function encodeForOutlook(text) {
 }
 
 function outlookComposeUrl(msg) {
+  const params = [
+    ['to', msg.email],
+    ['cc', msg.cc],
+    ['bcc', msg.bcc],
+    ['subject', msg.subject],
+    ['body', msg.body]
+  ].filter(([, value]) => String(value ?? '').trim() !== '');
+
   return 'https://outlook.office.com/mail/deeplink/compose'
-    + '?to=' + encodeForOutlook(msg.email)
-    + '&subject=' + encodeForOutlook(msg.subject)
-    + '&body=' + encodeForOutlook(msg.body);
+    + '?' + params.map(([key, value]) => key + '=' + encodeForOutlook(value)).join('&');
 }
 
 function mailtoUrl(msg) {
+  const params = [
+    ['cc', msg.cc],
+    ['bcc', msg.bcc],
+    ['subject', msg.subject],
+    ['body', msg.body]
+  ].filter(([, value]) => String(value ?? '').trim() !== '');
+
   return 'mailto:' + encodeForOutlook(msg.email)
-    + '?subject=' + encodeForOutlook(msg.subject)
-    + '&body=' + encodeForOutlook(msg.body);
+    + '?' + params.map(([key, value]) => key + '=' + encodeForOutlook(value)).join('&');
 }
 
 function renderStatus(text, cls = '') {
@@ -127,7 +155,60 @@ function renderStatus(text, cls = '') {
   $('status').textContent = text;
 }
 
-['csvText', 'subject', 'body'].forEach(id => {
+function getHeadersFromRows(rowList) {
+  const seen = new Set();
+  rowList.forEach(row => {
+    Object.keys(row).forEach(key => {
+      if (key && !seen.has(key)) seen.add(key);
+    });
+  });
+  return [...seen];
+}
+
+function insertAtCursor(field, text) {
+  const start = field.selectionStart ?? field.value.length;
+  const end = field.selectionEnd ?? field.value.length;
+  field.value = field.value.slice(0, start) + text + field.value.slice(end);
+  field.focus();
+  field.setSelectionRange(start + text.length, start + text.length);
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function renderVariableButtons() {
+  const container = $('variableButtons');
+  container.textContent = '';
+
+  csvHeaders.filter(Boolean).forEach(header => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'variable-button';
+    button.textContent = `{{${header}}}`;
+    button.title = `Insert {{${header}}}`;
+    button.addEventListener('click', () => {
+      insertAtCursor($(lastTemplateFieldId), `{{${header}}}`);
+    });
+    container.appendChild(button);
+  });
+}
+
+function messagePreview(title, msg) {
+  const lines = [
+    title,
+    `To: ${msg.email}`
+  ];
+  if (msg.cc) lines.push(`CC: ${msg.cc}`);
+  if (msg.bcc) lines.push(`BCC: ${msg.bcc}`);
+  lines.push(`Subject: ${msg.subject}`, '', msg.body);
+  return lines.join('\n');
+}
+
+TEMPLATE_FIELD_IDS.forEach(id => {
+  $(id).addEventListener('focus', () => {
+    lastTemplateFieldId = id;
+  });
+});
+
+['csvText', 'subject', 'cc', 'bcc', 'body'].forEach(id => {
   $(id).addEventListener('input', () => {
     // If templates/CSV change, keep typed content but require Start Merge again to regenerate drafts.
     saveState();
@@ -140,7 +221,7 @@ $('previewBtn').addEventListener('click', async () => {
     makeMessages();
     await saveState();
     const first = generated[0];
-    $('preview').textContent = `Loaded ${generated.length} rows.\n\nFirst preview:\nTo: ${first.email}\nSubject: ${first.subject}\n\n${first.body}`;
+    $('preview').textContent = `Loaded ${generated.length} rows.\n\n` + messagePreview('First preview:', first);
     renderStatus('Preview ready.', 'ok');
   } catch (e) {
     renderStatus(e.message, 'error');
