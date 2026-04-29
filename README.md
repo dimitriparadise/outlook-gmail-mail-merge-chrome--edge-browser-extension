@@ -12,6 +12,7 @@ This folder contains a small Manifest V3 browser extension that helps create per
 - Supports previous/next preview navigation across generated drafts.
 - Opens Outlook Web or Gmail compose links for each generated draft in a background tab.
 - Can open the next draft only or open a selected draft range with a 500ms delay between tabs.
+- Includes an experimental Auto-Send feature that uses a content script to automatically click the "Send" button and close the tab after opening.
 - Saves popup state with `chrome.storage.local`, so progress can continue after closing and reopening the popup.
 
 ## Folder Contents
@@ -22,6 +23,7 @@ This folder contains a small Manifest V3 browser extension that helps create per
 | `popup.html` | Defines the popup interface for CSV input, variable buttons, recipient templates, preview, status, and draft controls. |
 | `popup.css` | Styles the popup layout, form fields, buttons, status messages, and preview area. |
 | `popup.js` | Implements CSV parsing, template replacement, state persistence, preview generation, and compose draft opening. |
+| `content.js` | Injected into Gmail and Outlook Web pages to find and automatically click the "Send" button when Auto-Send is enabled. |
 
 ## How The Extension Works
 
@@ -36,6 +38,7 @@ This folder contains a small Manifest V3 browser extension that helps create per
 9. `Open Next Draft` increments and saves `currentIndex` before opening one compose URL.
 10. `Open Range` saves progress and opens the selected 1-based draft range in background tabs, waiting 500ms between tabs.
 11. Drafts open in background tabs, so the popup can stay open while the user queues additional drafts.
+12. If **Auto-Send** is checked, `content.js` scans the opened web page for the "Send" button, clicks it, and attempts to close the tab automatically after 3 seconds.
 
 ## CSV Format
 
@@ -133,7 +136,7 @@ The extension declares:
 - Gmail Mode uses Gmail compose URLs and does not depend on `mailto:`.
 - Progress is saved before opening each compose tab, because extension popups can close automatically when browser focus changes.
 - Range opening waits 500ms between tabs to reduce the chance of browser popup/tab throttling.
-- The extension opens drafts only; it does not automatically send email.
+- By default, the extension opens drafts only. If the experimental "Auto-Send" checkbox is selected, it uses `content.js` to click the Send button.
 
 ## Current Limitations
 

@@ -56,6 +56,7 @@ async function saveState() {
   const state = {
     csvText: $('csvText').value,
     composeMode: $('composeMode').value,
+    autoSend: $('autoSend').checked,
     subject: $('subject').value,
     cc: $('cc').value,
     bcc: $('bcc').value,
@@ -78,6 +79,7 @@ async function restoreState() {
 
   $('csvText').value = state.csvText || $('csvText').value;
   $('composeMode').value = state.composeMode || 'outlook';
+  $('autoSend').checked = state.autoSend || false;
   $('subject').value = state.subject || $('subject').value;
   $('cc').value = state.cc || '';
   $('bcc').value = state.bcc || '';
@@ -145,6 +147,8 @@ function outlookComposeUrl(msg) {
     ['body', msg.body]
   ].filter(([, value]) => String(value ?? '').trim() !== '');
 
+  if ($('autoSend').checked) params.push(['mailMergeAutoSend', 'true']);
+
   return 'https://outlook.office.com/mail/deeplink/compose'
     + '?' + params.map(([key, value]) => key + '=' + encodeForOutlook(value)).join('&');
 }
@@ -159,6 +163,8 @@ function gmailComposeUrl(msg) {
     ['su', msg.subject],
     ['body', msg.body]
   ].filter(([, value]) => String(value ?? '').trim() !== '');
+
+  if ($('autoSend').checked) params.push(['mailMergeAutoSend', 'true']);
 
   return 'https://mail.google.com/mail/?'
     + params.map(([key, value]) => key + '=' + encodeForOutlook(value)).join('&');
@@ -185,6 +191,7 @@ function composeUrl(msg) {
 
   // Outlook Web deeplinks currently ignore cc/bcc in some tenants. mailto handles those fields reliably
   // through the user's configured mail handler, so use it only when copy recipients are present.
+  if ($('autoSend').checked) return outlookComposeUrl(msg);
   return hasCopyRecipients(msg) ? mailtoUrl(msg) : outlookComposeUrl(msg);
 }
 
@@ -337,6 +344,10 @@ TEMPLATE_FIELD_IDS.forEach(id => {
 
 $('composeMode').addEventListener('change', () => {
   renderComposeModeHints();
+  saveState();
+});
+
+$('autoSend').addEventListener('change', () => {
   saveState();
 });
 

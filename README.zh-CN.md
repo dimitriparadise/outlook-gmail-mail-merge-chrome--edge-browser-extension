@@ -12,6 +12,7 @@
 - 支持 Outlook Mode 和 Gmail Mode。
 - 支持上一封/下一封预览。
 - 支持一次打开下一封草稿，也支持按范围批量打开草稿；批量打开时每 500ms 打开一个 tab。
+- 包含一项实验性的“自动发送” (Auto-Send) 功能，可以通过内容脚本自动点击“发送”按钮，并在发送后尝试关闭标签页。
 - 使用 `chrome.storage.local` 保存当前内容和进度，关闭插件弹窗后可以继续。
 
 ## 文件说明
@@ -22,6 +23,7 @@
 | `popup.html` | 定义插件弹窗界面，包括 CSV 输入、变量按钮、模板、预览和打开草稿按钮。 |
 | `popup.css` | 定义弹窗样式。 |
 | `popup.js` | 实现 CSV 解析、变量替换、状态保存、预览生成和打开邮件草稿。 |
+| `content.js` | 注入到 Gmail 和 Outlook Web 页面，用于在开启“自动发送”时查找并自动点击“发送”按钮。 |
 
 ## 使用流程
 
@@ -34,6 +36,7 @@
 7. 可以用 `Previous Preview` / `Next Preview` 检查不同收件人的草稿内容。
 8. 点击 `Open Next Draft` 打开下一封草稿。
 9. 或者填写 `From` / `To`，点击 `Open Range` 按 500ms 间隔打开某个范围内的草稿。
+10. 如果勾选了 **Auto-Send**，`content.js` 会扫描打开的网页寻找“发送”按钮，自动点击它，并尝试在 3 秒后关闭标签页。
 
 范围从 1 开始计数。例如 CSV 有 30 行，想一次打开第 6 到第 20 封，就填写：
 
@@ -157,7 +160,7 @@ Gmail Mode 不需要 `mailto:`，会直接使用 Gmail compose URL，并支持 T
 - Outlook Mode 中有 CC/BCC 的草稿使用 `mailto:`，因为 Outlook Web deeplink 可能忽略 CC/BCC。
 - Gmail Mode 使用 Gmail compose URL，不依赖 `mailto:`。
 - 按范围打开草稿时，每封之间等待 500ms，降低浏览器拦截大量新 tab 的概率。
-- 插件只打开草稿，不会自动发送邮件。
+- 默认情况下，插件只打开草稿。如果勾选了实验性的“自动发送”(Auto-Send)，它会使用 `content.js` 自动点击发送按钮。
 
 ## 当前限制
 
