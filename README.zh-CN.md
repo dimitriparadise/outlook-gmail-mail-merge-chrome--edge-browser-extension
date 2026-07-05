@@ -8,6 +8,8 @@
 - CSV 必须包含 `Email` 或 `email` 列，作为主收件人 To。
 - 支持模板变量，例如 `{{Name}}`、`{{Course}}`、`{{DueDate}}`。
 - 点击 `Generate Drafts` 后，会根据 CSV header 自动生成变量按钮。
+- 支持简单模板预设，并提供清除本地保存数据的按钮。
+- 打开草稿前会提示未知模板变量、明显非法邮箱、重复 To 收件人，以及 To 和 CC/BCC 重叠的问题。
 - 支持个性化 To、CC、BCC、Subject 和 Body。
 - 支持 Outlook Mode 和 Gmail Mode。
 - 支持上一封/下一封预览。
@@ -36,7 +38,7 @@
 7. 可以用 `Previous Preview` / `Next Preview` 检查不同收件人的草稿内容。
 8. 点击 `Open Next Draft` 打开下一封草稿。
 9. 或者填写 `From` / `To`，点击 `Open Range` 按 500ms 间隔打开某个范围内的草稿。
-10. 如果勾选了 **Auto-Send**，`content.js` 会扫描打开的网页寻找“发送”按钮，自动点击它，并尝试在 3 秒后关闭标签页。
+10. 如果勾选了 **Auto-Send**，`content.js` 会尝试识别由插件打开的 compose 窗口，只点击该窗口里的“发送”按钮，并尝试在 3 秒后关闭标签页。如果无法识别目标 compose 窗口，它不会点击发送。
 
 范围从 1 开始计数。例如 CSV 有 30 行，想一次打开第 6 到第 20 封，就填写：
 
@@ -102,6 +104,8 @@ BCC: {{BccEmail}}
 
 Gmail Mode 不需要 `mailto:`，会直接使用 Gmail compose URL，并支持 To、CC、BCC、Subject 和 Body。
 
+在打开草稿前，插件会检查未知模板变量、明显非法邮箱、重复 To 收件人，以及同一个邮箱同时出现在 To 和 CC/BCC 的情况。
+
 ## Compose Mode
 
 插件有两种模式：
@@ -110,6 +114,14 @@ Gmail Mode 不需要 `mailto:`，会直接使用 Gmail compose URL，并支持 T
 - `Gmail Mode`：直接打开 Gmail compose URL，不依赖 `mailto:`。Gmail Mode 支持 To、CC、BCC、Subject 和 Body。
 
 如果你希望 CC/BCC 不依赖 Chrome 的 `mailto:` 设置，可以使用 Gmail Mode。
+
+如果 Outlook Mode 中存在 CC 或 BCC，不能同时使用 Auto-Send，因为 Outlook Web 可能忽略抄送/密送。此时请使用 Gmail Mode，或关闭 Auto-Send。
+
+## 模板预设和本地保存数据
+
+`Template preset` 可以快速切换常用模板。选择预设会替换当前 Subject 和 Body 模板。
+
+`Clear Saved Data` 会清除 `chrome.storage.local` 中保存的 CSV 文本、生成结果、模板和打开进度，然后恢复默认模板。
 
 ## 在 Chrome 中设置 Mailto
 
@@ -155,17 +167,17 @@ Gmail Mode 不需要 `mailto:`，会直接使用 Gmail compose URL，并支持 T
 
 - CSV 解析在 `popup.js` 中本地完成。
 - CSV parser 支持带引号的字段和转义引号，但不是完整的企业级 CSV 解析器。
+- CSV parser 支持带换行的 quoted field。
 - 上传文件后，插件会把文件内容复制到 textarea，因为插件弹窗关闭后无法恢复文件 input。
 - Compose 链接使用 `encodeURIComponent()` 编码，避免空格和换行被错误处理。
 - Outlook Mode 中有 CC/BCC 的草稿使用 `mailto:`，因为 Outlook Web deeplink 可能忽略 CC/BCC。
 - Gmail Mode 使用 Gmail compose URL，不依赖 `mailto:`。
 - 按范围打开草稿时，每封之间等待 500ms，降低浏览器拦截大量新 tab 的概率。
-- 默认情况下，插件只打开草稿。如果勾选了实验性的“自动发送”(Auto-Send)，它会使用 `content.js` 自动点击发送按钮。
+- 默认情况下，插件只打开草稿。如果勾选了实验性的“自动发送”(Auto-Send)，它会在识别到目标 compose 窗口后使用 `content.js` 点击发送按钮。
 
 ## 当前限制
 
 - 没有 `Email` 或 `email` 的行会被忽略。
 - 不支持附件。
 - 不支持富文本编辑器。
-- 不检查重复收件人。
 - 一次打开特别大的范围时，浏览器仍然可能会限制或拦截大量新 tab。

@@ -9,43 +9,127 @@ const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'outlookMailMergeState';
 const OPEN_RANGE_DELAY_MS = 500;
 const TEMPLATE_FIELD_IDS = ['subject', 'cc', 'bcc', 'body'];
+const TEMPLATE_PRESETS = {
+  courseReminder: {
+    subject: 'Reminder for {{Course}}',
+    body: 'Hi {{Name}},\n\nThis is a quick reminder about {{Course}}.'
+  },
+  blank: {
+    subject: '',
+    body: ''
+  }
+};
 const COMPOSE_MODE_HINTS = {
   outlook: 'Opens Outlook Web drafts. If CC/BCC is present, Outlook Mode uses mailto because Outlook Web may ignore copy recipients.',
   gmail: 'Opens Gmail compose windows directly. Gmail Mode supports To, CC, BCC, subject, and body without mailto.'
 };
 
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
 function parseCSV(text) {
-  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim() !== '');
-  if (lines.length < 2) throw new Error('CSV needs a header row and at least one data row.');
+  const records = [];
+  let record = [];
+  let cur = '';
+  let inQuotes = false;
+  const source = text.replace(/^\uFEFF/, '');
 
-  const parseLine = (line) => {
-    const result = [];
-    let cur = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      const next = line[i + 1];
-      if (ch === '"' && inQuotes && next === '"') { cur += '"'; i++; }
-      else if (ch === '"') inQuotes = !inQuotes;
-      else if (ch === ',' && !inQuotes) { result.push(cur.trim()); cur = ''; }
-      else cur += ch;
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    const next = source[i + 1];
+
+    if (ch === '"' && inQuotes && next === '"') {
+      cur += '"';
+      i++;
+    } else if (ch === '"') {
+      inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      record.push(cur.trim());
+      cur = '';
+    } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+      if (ch === '\r' && next === '\n') i++;
+      record.push(cur.trim());
+      if (record.some(value => value !== '')) records.push(record);
+      record = [];
+      cur = '';
+    } else {
+      cur += ch;
     }
-    result.push(cur.trim());
-    return result;
-  };
+  }
 
-  const headers = parseLine(lines[0]).map(h => h.trim());
+  if (inQuotes) throw new Error('CSV has an unclosed quoted field.');
+  record.push(cur.trim());
+  if (record.some(value => value !== '')) records.push(record);
+
+  const lines = records;
+  if (lines.length < 2) throw new Error('CSV needs a header row and at least one data row.');
+  const headers = lines[0].map(h => h.trim());
   csvHeaders = headers;
   return lines.slice(1).map(line => {
-    const values = parseLine(line);
     const obj = {};
-    headers.forEach((h, i) => obj[h] = values[i] || '');
+    headers.forEach((h, i) => obj[h] = line[i] || '');
     return obj;
-  }).filter(r => r.Email || r.email);
+  }).filter(r => String(r.Email || r.email || '').trim() !== '');
 }
 
 function applyTemplate(template, row) {
   return template.replace(/{{\s*([^}]+?)\s*}}/g, (_, key) => row[key] ?? row[key.trim()] ?? '');
+}
+
+function templateVariables(template) {
+  const variables = new Set();
+  String(template || '').replace(/{{\s*([^}]+?)\s*}}/g, (_, key) => {
+    variables.add(key.trim());
+    return '';
+  });
+  return [...variables];
+}
+
+function findMissingTemplateVariables(headers, templates) {
+  const headerSet = new Set(headers);
+  const missing = new Set();
+  templates.flatMap(templateVariables).forEach(variable => {
+    if (!headerSet.has(variable)) missing.add(variable);
+  });
+  return [...missing];
+}
+
+function splitRecipients(value) {
+  return String(value || '')
+    .split(/[;,]/)
+    .map(recipient => recipient.trim())
+    .filter(Boolean);
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function validateMessages(messages) {
+  const issues = [];
+  const toCounts = new Map();
+
+  messages.forEach((msg, index) => {
+    const rowLabel = `Draft ${index + 1}`;
+    const to = String(msg.email || '').trim();
+    if (!isValidEmail(to)) issues.push(`${rowLabel}: Invalid email address: ${to || '(blank)'}`);
+    if (to) toCounts.set(to.toLowerCase(), (toCounts.get(to.toLowerCase()) || 0) + 1);
+
+    const copyRecipients = [...splitRecipients(msg.cc), ...splitRecipients(msg.bcc)];
+    copyRecipients.forEach(recipient => {
+      if (!isValidEmail(recipient)) issues.push(`${rowLabel}: Invalid email address: ${recipient}`);
+      if (recipient.toLowerCase() === to.toLowerCase()) {
+        issues.push(`${rowLabel}: ${recipient} also appears in CC/BCC.`);
+      }
+    });
+  });
+
+  toCounts.forEach((count, email) => {
+    if (count > 1) issues.push(`Duplicate To recipient: ${email}`);
+  });
+
+  return issues;
 }
 
 function getCsvText() {
@@ -57,6 +141,7 @@ async function saveState() {
     csvText: $('csvText').value,
     composeMode: $('composeMode').value,
     autoSend: $('autoSend').checked,
+    templatePreset: $('templatePreset').value,
     subject: $('subject').value,
     cc: $('cc').value,
     bcc: $('bcc').value,
@@ -77,13 +162,14 @@ async function restoreState() {
   const state = result[STORAGE_KEY];
   if (!state) return;
 
-  $('csvText').value = state.csvText || $('csvText').value;
+  $('csvText').value = hasOwn(state, 'csvText') ? state.csvText : $('csvText').value;
   $('composeMode').value = state.composeMode || 'outlook';
-  $('autoSend').checked = state.autoSend || false;
-  $('subject').value = state.subject || $('subject').value;
-  $('cc').value = state.cc || '';
-  $('bcc').value = state.bcc || '';
-  $('body').value = state.body || $('body').value;
+  $('autoSend').checked = Boolean(state.autoSend);
+  $('templatePreset').value = state.templatePreset || '';
+  $('subject').value = hasOwn(state, 'subject') ? state.subject : $('subject').value;
+  $('cc').value = hasOwn(state, 'cc') ? state.cc : '';
+  $('bcc').value = hasOwn(state, 'bcc') ? state.bcc : '';
+  $('body').value = hasOwn(state, 'body') ? state.body : $('body').value;
   rows = Array.isArray(state.rows) ? state.rows : [];
   csvHeaders = Array.isArray(state.csvHeaders) ? state.csvHeaders : getHeadersFromRows(rows);
   generated = Array.isArray(state.generated) ? state.generated : [];
@@ -130,6 +216,10 @@ function makeMessages() {
     const body = applyTemplate(bodyTemplate, row);
     return { email, cc, bcc, subject, body, row };
   });
+}
+
+function currentTemplates() {
+  return TEMPLATE_FIELD_IDS.map(id => $(id).value);
 }
 
 function encodeForOutlook(text) {
@@ -191,6 +281,9 @@ function composeUrl(msg) {
 
   // Outlook Web deeplinks currently ignore cc/bcc in some tenants. mailto handles those fields reliably
   // through the user's configured mail handler, so use it only when copy recipients are present.
+  if ($('autoSend').checked && hasCopyRecipients(msg)) {
+    throw new Error('Auto-Send with Outlook Mode cannot be used with CC or BCC. Use Gmail Mode or turn off Auto-Send.');
+  }
   if ($('autoSend').checked) return outlookComposeUrl(msg);
   return hasCopyRecipients(msg) ? mailtoUrl(msg) : outlookComposeUrl(msg);
 }
@@ -224,6 +317,12 @@ function syncPreviewControls() {
   $('previewCounter').textContent = hasMessages ? `${previewIndex + 1}/${total}` : '';
   $('previewPrevBtn').disabled = !hasMessages || previewIndex <= 0;
   $('previewNextBtn').disabled = !hasMessages || previewIndex >= total - 1;
+}
+
+function renderPreflightIssues(issues) {
+  if (!issues.length) return '';
+  return '\n\nPreflight warnings:\n- ' + issues.slice(0, 8).join('\n- ')
+    + (issues.length > 8 ? `\n- ...and ${issues.length - 8} more.` : '');
 }
 
 function clampPreviewIndex(index) {
@@ -308,6 +407,17 @@ function setRangeOpening(isOpening) {
   $('openRangeBtn').textContent = isOpening ? 'Opening...' : 'Open Range';
 }
 
+function runPreflight() {
+  const issues = [
+    ...findMissingTemplateVariables(csvHeaders, currentTemplates()),
+    ...validateMessages(generated)
+  ];
+
+  return issues.map(issue => issue.includes('Invalid') || issue.includes('Duplicate') || issue.includes('appears')
+    ? issue
+    : `Unknown template variable: {{${issue}}}`);
+}
+
 function getSelectedRange() {
   const total = generated.length;
   const start = Number.parseInt($('rangeStart').value, 10);
@@ -334,6 +444,7 @@ TEMPLATE_FIELD_IDS.forEach(id => {
 
 ['subject', 'cc', 'bcc', 'body'].forEach(id => {
   $(id).addEventListener('input', () => {
+    if (id === 'subject' || id === 'body') $('templatePreset').value = '';
     if (rows.length) {
       makeMessages();
       renderPreview();
@@ -351,14 +462,50 @@ $('autoSend').addEventListener('change', () => {
   saveState();
 });
 
+$('templatePreset').addEventListener('change', () => {
+  const preset = TEMPLATE_PRESETS[$('templatePreset').value];
+  if (!preset) return;
+  $('subject').value = preset.subject;
+  $('body').value = preset.body;
+  if (rows.length) {
+    makeMessages();
+    renderPreview();
+  }
+  saveState();
+});
+
 $('csvText').addEventListener('input', () => {
   saveState();
+});
+
+$('clearStateBtn').addEventListener('click', async () => {
+  await chrome.storage.local.remove(STORAGE_KEY);
+  rows = [];
+  currentIndex = 0;
+  previewIndex = 0;
+  generated = [];
+  csvHeaders = [];
+  $('csvText').value = '';
+  $('composeMode').value = 'outlook';
+  $('autoSend').checked = false;
+  $('templatePreset').value = '';
+  $('subject').value = TEMPLATE_PRESETS.courseReminder.subject;
+  $('cc').value = '';
+  $('bcc').value = '';
+  $('body').value = TEMPLATE_PRESETS.courseReminder.body;
+  $('sendControls').classList.add('hidden');
+  $('previewControls').classList.add('hidden');
+  $('preview').textContent = '';
+  renderVariableButtons();
+  renderComposeModeHints();
+  renderStatus('Saved data cleared. The default template is ready.', 'ok');
 });
 
 $('loadBtn').addEventListener('click', async () => {
   try {
     await loadRows();
     makeMessages();
+    const issues = runPreflight();
     currentIndex = 0;
     previewIndex = 0;
     await saveState();
@@ -366,7 +513,11 @@ $('loadBtn').addEventListener('click', async () => {
     $('previewControls').classList.remove('hidden');
     syncRangeInputs();
     renderPreview(`Loaded ${generated.length} rows.\n\nFirst preview:`);
-    renderStatus(`Ready: ${generated.length} personalized drafts. Review the preview, then open drafts.`, 'ok');
+    renderStatus(
+      `Ready: ${generated.length} personalized drafts. Review the preview, then open drafts.`
+        + renderPreflightIssues(issues),
+      issues.length ? 'error' : 'ok'
+    );
   } catch (e) {
     renderStatus(e.message, 'error');
   }
@@ -391,6 +542,10 @@ $('openNextBtn').addEventListener('click', async () => {
   if (currentIndex >= generated.length) return renderStatus('All drafts opened.', 'ok');
 
   makeMessages();
+  const issues = runPreflight();
+  if (issues.length) {
+    return renderStatus('Please fix the preflight warnings before opening drafts.' + renderPreflightIssues(issues), 'error');
+  }
   const msg = generated[currentIndex];
   const openedIndex = currentIndex + 1;
   currentIndex = openedIndex;
@@ -415,6 +570,10 @@ $('openRangeBtn').addEventListener('click', async () => {
   if (!generated.length) return renderStatus('Please generate drafts first.', 'error');
 
   makeMessages();
+  const issues = runPreflight();
+  if (issues.length) {
+    return renderStatus('Please fix the preflight warnings before opening drafts.' + renderPreflightIssues(issues), 'error');
+  }
   let range;
   try {
     range = getSelectedRange();

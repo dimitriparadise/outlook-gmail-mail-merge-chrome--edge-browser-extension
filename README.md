@@ -8,6 +8,8 @@ This folder contains a small Manifest V3 browser extension that helps create per
 - Requires an `Email` or `email` column for usable rows.
 - Supports template variables in the form `{{ColumnName}}`.
 - Shows variable buttons from the CSV headers so users can insert columns into templates.
+- Includes simple template presets and a local saved-data reset button.
+- Shows preflight warnings for unknown variables, invalid email addresses, duplicate To recipients, and To/CC/BCC overlap.
 - Generates personalized To, CC, BCC, subject, and body values for each CSV row.
 - Supports previous/next preview navigation across generated drafts.
 - Opens Outlook Web or Gmail compose links for each generated draft in a background tab.
@@ -38,7 +40,7 @@ This folder contains a small Manifest V3 browser extension that helps create per
 9. `Open Next Draft` increments and saves `currentIndex` before opening one compose URL.
 10. `Open Range` saves progress and opens the selected 1-based draft range in background tabs, waiting 500ms between tabs.
 11. Drafts open in background tabs, so the popup can stay open while the user queues additional drafts.
-12. If **Auto-Send** is checked, `content.js` scans the opened web page for the "Send" button, clicks it, and attempts to close the tab automatically after 3 seconds.
+12. If **Auto-Send** is checked, `content.js` tries to identify the compose window opened by the extension, clicks the matching "Send" button, and attempts to close the tab automatically after 3 seconds. If the target compose window cannot be identified, it does not click Send.
 
 ## CSV Format
 
@@ -67,6 +69,8 @@ This is a quick reminder about {{Course}} section {{Section}}, due {{DueDate}}.
 
 The `Email` or `email` column is used as the main To recipient. Optional CC and BCC fields can use fixed email addresses or variables from the CSV.
 
+Before drafts are opened, the extension checks for unknown template variables, obviously invalid email addresses, duplicate To recipients, and recipients that appear in both To and CC/BCC.
+
 ## Compose Modes
 
 The extension has two compose modes:
@@ -93,6 +97,14 @@ BCC: {{BccEmail}}
 ```
 
 Outlook Web compose deeplinks may ignore CC and BCC query parameters. Because of that, Outlook Mode uses `mailto:` whenever a generated draft has CC or BCC recipients. Gmail Mode does not need `mailto:` for CC/BCC.
+
+Auto-Send cannot be used with Outlook Mode when CC or BCC is present, because Outlook Web may ignore copy recipients. Use Gmail Mode or turn off Auto-Send for those drafts.
+
+## Template Presets And Saved Data
+
+The popup includes a `Template preset` selector for common starting points. Choosing a preset replaces the current subject and body templates.
+
+The `Clear Saved Data` button removes saved CSV text, generated drafts, templates, and progress from `chrome.storage.local`, then restores the default template.
 
 ## Setting Chrome Mailto Handling
 
@@ -130,18 +142,18 @@ The extension declares:
 ## Implementation Notes
 
 - CSV parsing is implemented locally in `popup.js`. It handles quoted fields and escaped quotes, but it is intentionally lightweight.
+- CSV parsing supports quoted fields that contain line breaks.
 - Uploaded file contents are copied into the CSV textarea because browser extension file inputs cannot be restored after the popup closes.
 - Compose URLs use `encodeURIComponent()` instead of `URLSearchParams` because some mail compose pages may show `+` characters literally in some fields.
 - Outlook Web deeplinks may ignore CC/BCC, so Outlook Mode messages with CC or BCC use `mailto:` and depend on the user's configured mail handler.
 - Gmail Mode uses Gmail compose URLs and does not depend on `mailto:`.
 - Progress is saved before opening each compose tab, because extension popups can close automatically when browser focus changes.
 - Range opening waits 500ms between tabs to reduce the chance of browser popup/tab throttling.
-- By default, the extension opens drafts only. If the experimental "Auto-Send" checkbox is selected, it uses `content.js` to click the Send button.
+- By default, the extension opens drafts only. If the experimental "Auto-Send" checkbox is selected, it uses `content.js` to click the Send button only after identifying a target compose window.
 
 ## Current Limitations
 
 - CSV rows without an `Email` or `email` value are ignored.
 - There is no attachment support.
 - There is no rich-text email editor.
-- There is no duplicate-recipient detection.
 - Opening a very large range may still trigger browser popup/tab throttling.

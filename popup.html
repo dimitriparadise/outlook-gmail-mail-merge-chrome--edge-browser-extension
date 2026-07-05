@@ -35,6 +35,13 @@ John,john@example.com,ISOM 210,A,Friday"></textarea>
     </div>
     <p id="composeModeHint" class="hint mode-hint"></p>
 
+    <label>Template preset</label>
+    <select id="templatePreset">
+      <option value="">Custom</option>
+      <option value="courseReminder">Course reminder</option>
+      <option value="blank">Blank</option>
+    </select>
+
     <label>3. Subject template</label>
     <input id="subject" value="Reminder for {{Course}}" />
 
@@ -48,13 +55,11 @@ John,john@example.com,ISOM 210,A,Friday"></textarea>
     <label>6. Body template</label>
     <textarea id="body">Hi {{Name}},
 
-This is a quick reminder about {{Course}}.
-
-Best,
-Professor He</textarea>
+This is a quick reminder about {{Course}}.</textarea>
 
     <div class="row">
       <button id="loadBtn">Generate Drafts</button>
+      <button id="clearStateBtn" type="button" class="secondary">Clear Saved Data</button>
     </div>
 
     <section id="status"></section>
