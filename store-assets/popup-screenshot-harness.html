@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Mail Merge Draft Helper</title>
-  <link rel="stylesheet" href="popup.css" />
+  <link rel="stylesheet" href="/popup.css" />
 </head>
 <body>
   <main>
@@ -86,6 +86,32 @@ This is a quick reminder about {{Course}}.</textarea>
       </div>
     </section>
   </main>
-  <script src="popup.js"></script>
+  
+<script>
+  const __mailMergeState = {};
+  window.chrome = {
+    storage: {
+      local: {
+        async get(key) {
+          if (typeof key === 'string') return { [key]: __mailMergeState[key] };
+          return { ...__mailMergeState };
+        },
+        async set(next) {
+          Object.assign(__mailMergeState, next);
+        },
+        async remove(key) {
+          delete __mailMergeState[key];
+        }
+      }
+    },
+    tabs: {
+      create(_options, callback) {
+        callback && callback();
+      }
+    },
+    runtime: {}
+  };
+</script>
+<script src="/popup.js"></script>
 </body>
 </html>

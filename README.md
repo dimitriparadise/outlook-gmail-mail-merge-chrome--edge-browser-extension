@@ -1,52 +1,35 @@
 # Mail Merge Draft Helper
 
-This folder contains a small Manifest V3 browser extension that helps create personalized Outlook or Gmail email drafts from a CSV list. The extension runs entirely from the popup UI: users import or paste CSV data, choose Outlook Mode or Gmail Mode, write subject and body templates, generate drafts, browse previews, and open compose drafts one at a time or by selected range.
+Mail Merge Draft Helper is a lightweight Chrome extension for creating personalized Gmail or Outlook Web email drafts from a CSV file. It is designed for instructors, administrators, and small teams who need to prepare many similar messages while still reviewing each email before it goes out.
 
-## What It Does
+The extension runs locally in the browser popup. You paste or upload a CSV, write reusable subject and body templates, preview each personalized message, and open the selected draft in Gmail or Outlook Web.
 
-- Reads recipient data from an uploaded CSV file or pasted CSV text.
-- Requires an `Email` or `email` column for usable rows.
-- Supports template variables in the form `{{ColumnName}}`.
-- Shows variable buttons from the CSV headers so users can insert columns into templates.
-- Includes simple template presets and a local saved-data reset button.
-- Shows preflight warnings for unknown variables, invalid email addresses, duplicate To recipients, and To/CC/BCC overlap.
-- Generates personalized To, CC, BCC, subject, and body values for each CSV row.
-- Supports previous/next preview navigation across generated drafts.
-- Opens Outlook Web or Gmail compose links for each generated draft in a background tab.
-- Can open the next draft only or open a selected draft range with a 500ms delay between tabs.
-- Includes an experimental Auto-Send feature that uses a content script to automatically click the "Send" button and close the tab after opening.
-- Saves popup state with `chrome.storage.local`, so progress can continue after closing and reopening the popup.
+## Highlights
 
-## Folder Contents
+- Create personalized Gmail or Outlook Web drafts from CSV rows.
+- Use template variables such as `{{Name}}`, `{{Course}}`, or any other CSV column.
+- Preview each generated message before opening it.
+- Open the current preview draft or open a selected range of drafts.
+- Add optional CC and BCC values, including values from CSV columns.
+- Get preflight warnings for missing variables, invalid email addresses, duplicate recipients, and To/CC/BCC overlap.
+- Keep progress locally with `chrome.storage.local`.
+- Clear saved local data at any time.
+- Optional experimental Auto-Send mode with clearer "Open & Send..." button labels.
 
-| File | Purpose |
-| --- | --- |
-| `manifest.json` | Defines the extension metadata, popup entry point, permissions, and mail-service host permissions. |
-| `popup.html` | Defines the popup interface for CSV input, variable buttons, recipient templates, preview, status, and draft controls. |
-| `popup.css` | Styles the popup layout, form fields, buttons, status messages, and preview area. |
-| `popup.js` | Implements CSV parsing, template replacement, state persistence, preview generation, and compose draft opening. |
-| `content.js` | Injected into Gmail and Outlook Web pages to find and automatically click the "Send" button when Auto-Send is enabled. |
+## How It Works
 
-## How The Extension Works
+1. Upload a CSV file or paste CSV text into the popup.
+2. Choose Gmail Mode or Outlook Mode.
+3. Customize the subject, body, CC, and BCC templates.
+4. Click `Generate Drafts`.
+5. Review each personalized preview.
+6. Click `Open Preview Draft`, or choose a From/To range and click `Open Selected Drafts`.
 
-1. The browser loads `popup.html` as the extension action popup.
-2. `popup.js` restores any saved CSV text, templates, generated messages, and progress from `chrome.storage.local`.
-3. The user uploads or pastes CSV data.
-4. `parseCSV()` converts the CSV text into row objects using the header row as keys.
-5. `Generate Drafts` renders one insert button for each CSV header, such as `{{Name}}`, `{{Course}}`, or `{{DueDate}}`.
-6. `applyTemplate()` replaces placeholders with values from each row.
-7. `makeMessages()` builds the personalized To, CC, BCC, subject, and body values and stores them in memory.
-8. The popup shows the first generated message as a preview and lets the user move through previews.
-9. `Open Next Draft` increments and saves `currentIndex` before opening one compose URL.
-10. `Open Range` saves progress and opens the selected 1-based draft range in background tabs, waiting 500ms between tabs.
-11. Drafts open in background tabs, so the popup can stay open while the user queues additional drafts.
-12. If **Auto-Send** is checked, `content.js` tries to identify the compose window opened by the extension, clicks the matching "Send" button, and attempts to close the tab automatically after 3 seconds. If the target compose window cannot be identified, it does not click Send.
+When Auto-Send is enabled, the single-draft button changes to `Open & Send Preview Email`, and the range button changes to `Open & Send Selected Emails`.
 
 ## CSV Format
 
-The CSV must include a header row and at least one data row. It must include either `Email` or `email`.
-
-Example:
+Your CSV must include a header row and at least one data row. It must include either `Email` or `email`.
 
 ```csv
 Name,Email,Course,Section,DueDate,CcEmail,BccEmail
@@ -57,103 +40,95 @@ Jane,jane@example.com,ISOM 340,B,Monday,ta@example.com,archive@example.com
 Any header can be used as a template variable:
 
 ```text
-CC: {{CcEmail}}
-BCC: {{BccEmail}}
-Subject: Reminder for {{Course}}
+Subject:
+Reminder for {{Course}}
 
 Body:
 Hi {{Name}},
 
 This is a quick reminder about {{Course}} section {{Section}}, due {{DueDate}}.
+
+CC:
+{{CcEmail}}
+
+BCC:
+{{BccEmail}}
 ```
 
-The `Email` or `email` column is used as the main To recipient. Optional CC and BCC fields can use fixed email addresses or variables from the CSV.
+Use a real line break between the header row and the first data row. Visual wrapping inside the text box does not count as a CSV row break.
 
-Before drafts are opened, the extension checks for unknown template variables, obviously invalid email addresses, duplicate To recipients, and recipients that appear in both To and CC/BCC.
+## Gmail And Outlook Modes
 
-## Compose Modes
+`Gmail Mode` opens Gmail compose URLs directly and supports To, CC, BCC, subject, and body.
 
-The extension has two compose modes:
+`Outlook Mode` opens Outlook Web compose links. If a generated message has CC or BCC recipients, the extension uses `mailto:` because Outlook Web compose links may ignore copy recipients in some tenants.
 
-- `Outlook Mode`: opens Outlook Web compose links. If a message has CC or BCC recipients, Outlook Mode falls back to `mailto:` because Outlook Web may ignore CC/BCC query parameters.
-- `Gmail Mode`: opens Gmail compose links directly using `https://mail.google.com/mail/?view=cm&fs=1...`. Gmail Mode supports To, CC, BCC, subject, and body without `mailto:`.
+Auto-Send cannot be used with Outlook Mode when CC or BCC is present. Use Gmail Mode or turn off Auto-Send for those messages.
 
-Use Gmail Mode if you want CC/BCC to work without configuring Chrome's `mailto:` handler.
+## Privacy
 
-## CC And BCC
+Mail Merge Draft Helper does not run a backend service and does not send your CSV data to a third-party server.
 
-The optional CC and BCC fields can be left blank, filled with fixed email addresses, or filled with CSV variables.
+The extension stores CSV text, templates, generated draft data, and progress locally in Chrome extension storage so you can close and reopen the popup without losing your place. Use `Clear Saved Data` to remove this local saved state.
 
-Examples:
+The extension requests:
 
-```text
-CC: ta@example.com
-BCC: archive@example.com
-```
+- `storage`: saves your local draft-generation state.
+- `tabs`: opens Gmail, Outlook, or `mailto:` compose tabs.
+- Gmail and Outlook host permissions: allows the optional Auto-Send content script to identify the compose window opened by the extension.
 
-```text
-CC: {{CcEmail}}
-BCC: {{BccEmail}}
-```
+## Limitations
 
-Outlook Web compose deeplinks may ignore CC and BCC query parameters. Because of that, Outlook Mode uses `mailto:` whenever a generated draft has CC or BCC recipients. Gmail Mode does not need `mailto:` for CC/BCC.
+- Attachments are not supported in the current URL-based compose flow.
+- There is no rich-text email editor.
+- Very large ranges may still be limited by browser tab or popup throttling.
+- Auto-Send is experimental. Review your drafts carefully before using it.
 
-Auto-Send cannot be used with Outlook Mode when CC or BCC is present, because Outlook Web may ignore copy recipients. Use Gmail Mode or turn off Auto-Send for those drafts.
+## Local Development
 
-## Template Presets And Saved Data
-
-The popup includes a `Template preset` selector for common starting points. Choosing a preset replaces the current subject and body templates.
-
-The `Clear Saved Data` button removes saved CSV text, generated drafts, templates, and progress from `chrome.storage.local`, then restores the default template.
-
-## Setting Chrome Mailto Handling
-
-Use these steps if Outlook Mode CC/BCC drafts open in the wrong app, or if nothing opens when using CC/BCC. Gmail Mode does not require this setup.
-
-1. Open Chrome.
-2. Go to `chrome://settings/handlers`.
-3. Turn on `Sites can ask to handle protocols`.
-4. Open the mail service you want to use for `mailto:` links, such as Gmail or Outlook Web, in Chrome.
-5. If Chrome shows a protocol-handler icon in the address bar, usually a double-diamond icon, click it.
-6. Choose `Allow`, then confirm with `Done`.
-7. Return to `chrome://settings/handlers` and confirm the site is listed as the handler for email or `mailto:`.
-
-If the handler icon does not appear, remove old blocked/default email handlers from `chrome://settings/handlers`, refresh the mail site, and try again. On macOS or Windows, you may also need to set Chrome or your preferred mail app as the system default email app.
-
-## Loading The Extension Locally
-
-1. Open a Chromium-based browser such as Chrome or Edge.
-2. Go to the browser extensions page.
-   - Chrome: `chrome://extensions`
-   - Edge: `edge://extensions`
-3. Enable developer mode.
-4. Choose `Load unpacked`.
+1. Open Chrome or Edge.
+2. Go to `chrome://extensions` or `edge://extensions`.
+3. Enable Developer mode.
+4. Click `Load unpacked`.
 5. Select this folder.
 6. Click the extension icon to open the popup.
 
-## Permissions
+Run the test suite with:
 
-The extension declares:
+```bash
+node --test
+```
 
-- `storage`: saves CSV text, templates, generated drafts, and progress locally.
-- `tabs`: opens each generated compose draft in a background tab.
-- Host permissions for Gmail and Outlook compose pages.
+Run a syntax check with:
 
-## Implementation Notes
+```bash
+node --check popup.js && node --check content.js
+```
 
-- CSV parsing is implemented locally in `popup.js`. It handles quoted fields and escaped quotes, but it is intentionally lightweight.
-- CSV parsing supports quoted fields that contain line breaks.
-- Uploaded file contents are copied into the CSV textarea because browser extension file inputs cannot be restored after the popup closes.
-- Compose URLs use `encodeURIComponent()` instead of `URLSearchParams` because some mail compose pages may show `+` characters literally in some fields.
-- Outlook Web deeplinks may ignore CC/BCC, so Outlook Mode messages with CC or BCC use `mailto:` and depend on the user's configured mail handler.
-- Gmail Mode uses Gmail compose URLs and does not depend on `mailto:`.
-- Progress is saved before opening each compose tab, because extension popups can close automatically when browser focus changes.
-- Range opening waits 500ms between tabs to reduce the chance of browser popup/tab throttling.
-- By default, the extension opens drafts only. If the experimental "Auto-Send" checkbox is selected, it uses `content.js` to click the Send button only after identifying a target compose window.
+## Publishing To The Chrome Web Store
 
-## Current Limitations
+Before publishing, prepare the following:
 
-- CSV rows without an `Email` or `email` value are ignored.
-- There is no attachment support.
-- There is no rich-text email editor.
-- Opening a very large range may still trigger browser popup/tab throttling.
+- A production-ready zip package of the extension files.
+- Store listing name, summary, detailed description, category, language, and screenshots.
+- A 128x128 extension icon and promotional images if you want a stronger listing page.
+- A privacy policy URL if required for your data handling disclosures.
+- Clear permission justifications for `storage`, `tabs`, and host permissions.
+- Completed privacy practices and limited-use certification in the Chrome Developer Dashboard.
+
+Publishing flow:
+
+1. Create or sign in to a Chrome Web Store developer account.
+2. Open the [Chrome Developer Dashboard](https://chrome.google.com/webstore/devconsole/).
+3. Click `Add new item`.
+4. Upload the extension zip file.
+5. Complete the store listing fields.
+6. Complete the privacy practices fields.
+7. Set distribution, visibility, and regions.
+8. Submit the item for Chrome Web Store review.
+
+Official references:
+
+- [Publish in the Chrome Web Store](https://developer.chrome.com/docs/webstore/publish)
+- [Chrome Web Store Developer Program Policies](https://developer.chrome.com/docs/webstore/program-policies)
+- [Privacy disclosure requirements](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq)

@@ -1,0 +1,118 @@
+body {
+  width: 430px;
+  margin: 0;
+  font-family: Arial, sans-serif;
+  color: #1f2937;
+  background: #f8fafc;
+}
+main { padding: 14px; }
+h1 { font-size: 18px; margin: 0 0 8px; }
+.hint { font-size: 12px; line-height: 1.4; color: #475569; }
+.mailto-hint, .mode-hint { margin: 6px 0 0; }
+label { display: block; font-weight: 700; margin-top: 12px; font-size: 13px; }
+input, textarea, select {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 13px;
+  background: white;
+}
+textarea { min-height: 95px; resize: vertical; }
+#csvText { min-height: 70px; }
+.variable-panel {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: white;
+}
+.variable-panel label { margin-top: 0; }
+.variable-panel .hint { margin: 6px 0 0; }
+.variable-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.variable-buttons:empty::before {
+  content: "No variables loaded yet.";
+  color: #64748b;
+  font-size: 12px;
+}
+.variable-button {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: 12px;
+}
+.row { display: flex; gap: 8px; margin-top: 12px; }
+#sendControls {
+  margin-top: 12px;
+}
+#sendControls > button {
+  width: 100%;
+}
+.preview-controls {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.preview-controls button {
+  min-width: 0;
+  font-size: 12px;
+}
+#previewCounter {
+  min-width: 56px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+.range-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.3fr;
+  gap: 8px;
+  align-items: end;
+  margin-top: 10px;
+}
+.range-controls label {
+  margin-top: 0;
+}
+.range-controls input {
+  min-width: 0;
+}
+button {
+  flex: 1;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: #2563eb;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+button.secondary { background: #475569; }
+#status, #preview {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.hidden { display: none; }
+.error { color: #b91c1c; }
+.ok { color: #166534; }
+code { background: #e2e8f0; padding: 1px 4px; border-radius: 4px; }

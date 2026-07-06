@@ -4,6 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 function createElement(id, initial = {}) {
+  const listeners = new Map();
   return {
     id,
     value: initial.value ?? '',
@@ -19,11 +20,21 @@ function createElement(id, initial = {}) {
       remove() {},
       toggle() {}
     },
-    addEventListener() {},
+    addEventListener(type, handler) {
+      if (!listeners.has(type)) listeners.set(type, []);
+      listeners.get(type).push(handler);
+    },
+    async dispatchEvent(event) {
+      for (const handler of listeners.get(event.type) || []) {
+        await handler(event);
+      }
+    },
+    async click() {
+      await this.dispatchEvent({ type: 'click' });
+    },
     appendChild() {},
     focus() {},
     setSelectionRange() {},
-    dispatchEvent() {},
     get selectionStart() {
       return this.value.length;
     },
@@ -73,6 +84,7 @@ function loadPopup(state) {
 
   const stored = state === undefined ? {} : { outlookMailMergeState: state };
   const saved = [];
+  const openedTabs = [];
   const context = {
     console,
     Event: class Event {
@@ -103,7 +115,8 @@ function loadPopup(state) {
         }
       },
       tabs: {
-        create(_options, callback) {
+        create(options, callback) {
+          openedTabs.push(options);
           callback();
         }
       },
@@ -118,11 +131,12 @@ globalThis.__popupTestApi = {
   applyTemplate,
   validateMessages: typeof validateMessages === 'function' ? validateMessages : undefined,
   findMissingTemplateVariables: typeof findMissingTemplateVariables === 'function' ? findMissingTemplateVariables : undefined,
+  syncDraftActionLabels,
   restoreState,
   makeMessages,
   composeUrl
 };`, context);
-  return { context, elements, saved, api: context.__popupTestApi };
+  return { context, elements, saved, openedTabs, api: context.__popupTestApi };
 }
 
 test('restoreState preserves intentionally blank subject and body', async () => {
@@ -154,6 +168,15 @@ test('parseCSV supports quoted fields containing newlines', () => {
 
   assert.equal(rows.length, 1);
   assert.equal(rows[0].Notes, 'Line one\nLine two');
+});
+
+test('parseCSV explains that wrapped text still needs a real line break', () => {
+  const { api } = loadPopup();
+
+  assert.throws(
+    () => api.parseCSV('Name, Email, Course, Section, DueDate, John, john@example.com, ISOM 210, A, Friday'),
+    /real line break.*press Enter/i
+  );
 });
 
 test('findMissingTemplateVariables reports variables that are not CSV headers', () => {
@@ -208,4 +231,56 @@ test('composeUrl blocks Outlook auto-send when CC or BCC is present', () => {
     }),
     /Auto-Send with Outlook Mode cannot be used with CC or BCC/
   );
+});
+
+test('syncDraftActionLabels changes button text when Auto-Send is enabled', () => {
+  const { elements, api } = loadPopup();
+
+  elements.get('autoSend').checked = true;
+  api.syncDraftActionLabels();
+
+  assert.equal(elements.get('openNextBtn').textContent, 'Open & Send Preview Email');
+  assert.equal(elements.get('openRangeBtn').textContent, 'Open & Send Selected Emails');
+});
+
+test('syncDraftActionLabels uses draft wording when Auto-Send is disabled', () => {
+  const { elements, api } = loadPopup();
+
+  elements.get('autoSend').checked = false;
+  api.syncDraftActionLabels();
+
+  assert.equal(elements.get('openNextBtn').textContent, 'Open Preview Draft');
+  assert.equal(elements.get('openRangeBtn').textContent, 'Open Selected Drafts');
+});
+
+test('single open button opens the currently previewed draft', async () => {
+  const generated = [
+    { email: 'first@example.com', cc: '', bcc: '', subject: 'First', body: 'Body', row: {} },
+    { email: 'second@example.com', cc: '', bcc: '', subject: 'Second', body: 'Body', row: {} }
+  ];
+  const { elements, openedTabs, api } = loadPopup({
+    csvText: 'Name,Email\nFirst,first@example.com\nSecond,second@example.com',
+    composeMode: 'gmail',
+    autoSend: false,
+    templatePreset: '',
+    subject: '{{Name}}',
+    cc: '',
+    bcc: '',
+    body: 'Body',
+    rows: [
+      { Name: 'First', Email: 'first@example.com' },
+      { Name: 'Second', Email: 'second@example.com' }
+    ],
+    csvHeaders: ['Name', 'Email'],
+    generated,
+    currentIndex: 0,
+    previewIndex: 1
+  });
+
+  await api.restoreState();
+  await elements.get('openNextBtn').click();
+
+  assert.equal(openedTabs.length, 1);
+  assert.match(openedTabs[0].url, /to=second%40example\.com/);
+  assert.doesNotMatch(openedTabs[0].url, /first%40example\.com/);
 });
