@@ -69,3 +69,21 @@ test('findAndClickSend clicks only the send button inside the mail merge target 
   assert.equal(api.findAndClickSend(), true);
   assert.deepEqual(clicks, ['target']);
 });
+
+test('findAndClickSend supports Chinese "发送" aria-label', () => {
+  const clicks = [];
+  const targetSendChinese = {
+    targeted: true,
+    textContent: '',
+    getAttribute(name) {
+      return name === 'aria-label' ? '发送 (Ctrl-Enter)' : null;
+    },
+    click() {
+      clicks.push('chinese-send');
+    }
+  };
+
+  const api = loadContent([targetSendChinese]);
+  assert.equal(api.findAndClickSend(), true);
+  assert.deepEqual(clicks, ['chinese-send']);
+});

@@ -66,20 +66,23 @@ function findAndClickSend() {
     const buttons = document.querySelectorAll('[data-mail-merge-target="true"] div[role="button"]');
     for (const btn of buttons) {
       const label = btn.getAttribute('aria-label');
-      // Sometimes it's "Send" or "Send ‪(Ctrl-Enter)‬"
-      if (label && label.toLowerCase().startsWith('send')) {
+      // Supports "Send", "Send ‪(Ctrl-Enter)‬", "发送", "发送 ‪(Ctrl-Enter)‬"
+      if (label && (label.toLowerCase().startsWith('send') || label.trim().startsWith('发送'))) {
         sendButton = btn;
         break;
       }
     }
   } else if (isOutlook) {
-    // Outlook send button usually has aria-label="Send" or title="Send"
+    // Outlook send button usually has aria-label="Send" or title="Send" (or "发送" in Chinese)
     const buttons = document.querySelectorAll('[data-mail-merge-target="true"] button');
     for (const btn of buttons) {
       const label = btn.getAttribute('aria-label') || btn.getAttribute('title') || btn.textContent;
-      if (label && label.trim().toLowerCase() === 'send') {
-        sendButton = btn;
-        break;
+      if (label) {
+        const trimmed = label.trim().toLowerCase();
+        if (trimmed === 'send' || trimmed === '发送' || label.trim().startsWith('发送')) {
+          sendButton = btn;
+          break;
+        }
       }
     }
   }

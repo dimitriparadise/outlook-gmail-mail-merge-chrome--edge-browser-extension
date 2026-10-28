@@ -284,3 +284,15 @@ test('single open button opens the currently previewed draft', async () => {
   assert.match(openedTabs[0].url, /to=second%40example\.com/);
   assert.doesNotMatch(openedTabs[0].url, /first%40example\.com/);
 });
+
+test('parseCSV recognizes alternative email column headers and Chinese variables', () => {
+  const { api } = loadPopup();
+  const rows = api.parseCSV('姓名,邮箱,课程\n张三,zhangsan@example.com,计算机科学');
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].Email, 'zhangsan@example.com');
+  assert.equal(rows[0]['姓名'], '张三');
+
+  const rendered = api.applyTemplate('你好 {{姓名}}，欢迎参加 {{课程}}', rows[0]);
+  assert.equal(rendered, '你好 张三，欢迎参加 计算机科学');
+});

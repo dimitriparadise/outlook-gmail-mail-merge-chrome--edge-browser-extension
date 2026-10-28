@@ -41,7 +41,6 @@ Auto-Send does not transmit data to any third-party server. Users should review 
 The extension requests:
 
 - `storage`: to save draft-generation state locally.
-- `tabs`: to open compose tabs.
 - Gmail and Outlook host permissions: to support optional Auto-Send behavior on compose pages.
 
 ## Changes

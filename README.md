@@ -74,7 +74,6 @@ The extension stores CSV text, templates, generated draft data, and progress loc
 The extension requests:
 
 - `storage`: saves your local draft-generation state.
-- `tabs`: opens Gmail, Outlook, or `mailto:` compose tabs.
 - Gmail and Outlook host permissions: allows the optional Auto-Send content script to identify the compose window opened by the extension.
 
 ## Limitations
@@ -113,7 +112,7 @@ Before publishing, prepare the following:
 - Store listing name, summary, detailed description, category, language, and screenshots.
 - A 128x128 extension icon and promotional images if you want a stronger listing page.
 - A privacy policy URL if required for your data handling disclosures.
-- Clear permission justifications for `storage`, `tabs`, and host permissions.
+- Clear permission justifications for `storage` and host permissions.
 - Completed privacy practices and limited-use certification in the Chrome Developer Dashboard.
 
 Publishing flow:
