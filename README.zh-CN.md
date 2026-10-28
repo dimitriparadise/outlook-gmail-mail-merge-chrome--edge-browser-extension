@@ -74,7 +74,6 @@ Mail Merge Draft Helper 不运行后端服务，也不会把你的 CSV 数据发
 插件使用以下权限：
 
 - `storage`：保存本地草稿生成状态。
-- `tabs`：打开 Gmail、Outlook 或 `mailto:` 草稿标签页。
 - Gmail 和 Outlook host permissions：用于实验性的 Auto-Send 功能识别由插件打开的 compose 窗口。
 
 ## 当前限制
@@ -113,7 +112,7 @@ node --check popup.js && node --check content.js
 - 商店展示名称、简短简介、详细描述、分类、语言和截图。
 - 128x128 插件图标，以及用于提升展示效果的宣传图片。
 - 如果数据披露要求需要，准备隐私政策 URL。
-- 对 `storage`、`tabs` 和 host permissions 的清晰权限说明。
+- 对 `storage` 和 host permissions 的清晰权限说明。
 - 在 Chrome Developer Dashboard 中完成 privacy practices 和 limited-use certification。
 
 发布流程：

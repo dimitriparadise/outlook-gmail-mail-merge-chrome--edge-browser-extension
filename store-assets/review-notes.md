@@ -14,9 +14,7 @@ Mail Merge Draft Helper is a Manifest V3 extension that helps users generate per
 
 ## Permission Usage
 
-`storage` is used only for local popup state, including CSV text, templates, generated draft data, and progress.
-
-`tabs` is used only to open compose tabs for Gmail, Outlook Web, or `mailto:`.
+`storage` is used only for local popup state, including CSV text, templates, generated draft data, and progress. Draft tabs are opened directly via `chrome.tabs.create()` without requiring the `tabs` permission.
 
 Host permissions for Gmail and Outlook are used by the optional Auto-Send content script. The content script only acts when the compose URL contains the extension's `mailMergeAutoSend=true` marker. It attempts to identify the compose window opened by the extension before clicking Send.
 

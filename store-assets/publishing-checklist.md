@@ -37,7 +37,6 @@
 ## Permissions
 
 - [ ] Explain `storage`: local state for CSV, templates, generated drafts, and progress.
-- [ ] Explain `tabs`: opens Gmail, Outlook, or mailto compose tabs.
 - [ ] Explain Gmail and Outlook host permissions: optional Auto-Send compose-window detection.
 
 ## Review

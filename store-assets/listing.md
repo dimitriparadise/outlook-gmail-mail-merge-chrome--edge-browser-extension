@@ -59,10 +59,6 @@ mail merge, Gmail drafts, Outlook drafts, CSV email, email templates, productivi
 
 Used to save CSV text, templates, generated draft data, and progress locally in Chrome extension storage so users can close and reopen the popup without losing their work.
 
-### tabs
-
-Used to open Gmail, Outlook Web, or mailto compose tabs for the selected generated drafts.
-
 ### Host permissions for Gmail and Outlook
 
 Used by the optional Auto-Send content script to identify the compose window opened by the extension and click the matching Send button only when Auto-Send is enabled.

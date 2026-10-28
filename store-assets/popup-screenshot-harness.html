@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <title>Mail Merge Draft Helper</title>
@@ -7,72 +7,149 @@
 </head>
 <body>
   <main>
-    <h1>Mail Merge Drafts</h1>
-    <p class="hint">CSV columns should include at least <b>Name</b> and <b>Email</b>. Other columns can be used as variables like <code>{{Course}}</code>.</p>
+    <header class="app-header">
+      <div class="header-title-group">
+        <div class="app-icon">✉</div>
+        <div>
+          <h1>Mail Merge Helper</h1>
+        </div>
+      </div>
+      <span class="version-badge">v0.1.1</span>
+    </header>
 
-    <label>1. Student CSV</label>
-    <input id="csvFile" type="file" accept=".csv,text/csv" />
-    <textarea id="csvText" placeholder="Or paste CSV here:
-Name,Email,Course,Section,DueDate
-John,john@example.com,ISOM 210,A,Friday"></textarea>
-    <p class="hint">Use a real line break between the header row and the first student row. Visual wrapping inside the box is not a CSV row break.</p>
+    <!-- Card 1: Data Source -->
+    <section class="card">
+      <div class="card-title">
+        <span><span class="card-title-icon">📊</span>1. Recipient CSV Data</span>
+        <div id="csvSummary" class="csv-summary hidden"></div>
+      </div>
+      
+      <div id="dropZone" class="drop-zone">
+        <input id="csvFile" type="file" accept=".csv,text/csv" />
+        <div class="drop-zone-icon">📄</div>
+        <div class="drop-zone-text">
+          <span class="drop-zone-highlight">Click to browse</span> or drag & drop CSV file
+        </div>
+      </div>
 
-    <section class="variable-panel">
-      <label>Template variables</label>
-      <p class="hint">Click Generate Drafts after uploading or pasting CSV data to load variables.</p>
-      <div id="variableButtons" class="variable-buttons"></div>
+      <div style="margin-top: 8px;">
+        <button type="button" id="togglePasteCsvBtn" class="text-toggle-btn">Or paste / view raw CSV text</button>
+      </div>
+
+      <div id="pasteCsvContainer" class="hidden" style="margin-top: 6px;">
+        <textarea id="csvText" placeholder="Name,Email,Course,Section,DueDate&#10;John,john@example.com,ISOM 210,A,Friday"></textarea>
+        <p class="hint">Ensure there is a real line break between the header row and student data rows.</p>
+      </div>
     </section>
 
-    <label>2. Compose mode</label>
-    <select id="composeMode">
-      <option value="outlook">Outlook Mode</option>
-      <option value="gmail">Gmail Mode</option>
-    </select>
-    <div style="margin-top: 8px; margin-bottom: 4px;">
-      <label style="display: inline-flex; align-items: center; font-weight: normal; font-size: 0.9em; cursor: pointer;">
-        <input type="checkbox" id="autoSend" style="margin-right: 6px; width: auto;">
-        Auto-Send Drafts (Experimental)
-      </label>
-    </div>
-    <p id="composeModeHint" class="hint mode-hint"></p>
+    <!-- Card 2: Email Template -->
+    <section class="card">
+      <div class="card-title">
+        <span><span class="card-title-icon">✍️</span>2. Email Template</span>
+      </div>
 
-    <label>Template preset</label>
-    <select id="templatePreset">
-      <option value="">Custom</option>
-      <option value="courseReminder">Course reminder</option>
-      <option value="blank">Blank</option>
-    </select>
+      <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+        <label for="templatePreset" style="margin: 0; white-space: nowrap;">Preset:</label>
+        <select id="templatePreset">
+          <option value="">Custom</option>
+          <option value="courseReminder">Course reminder</option>
+          <option value="blank">Blank</option>
+        </select>
+      </div>
 
-    <label>3. Subject template</label>
-    <input id="subject" value="Reminder for {{Course}}" />
+      <!-- Variable Insertion Chips -->
+      <div class="variable-panel">
+        <div class="variable-panel-header">Click to insert variable</div>
+        <div id="variableButtons" class="variable-buttons"></div>
+      </div>
 
-    <label>4. Optional CC</label>
-    <input id="cc" placeholder="Optional: email@example.com or {{CcEmail}}" />
+      <label for="subject">Subject</label>
+      <input id="subject" value="Reminder for {{Course}}" />
 
-    <label>5. Optional BCC</label>
-    <input id="bcc" placeholder="Optional: email@example.com or {{BccEmail}}" />
-    <p id="copyRecipientHint" class="hint mailto-hint"></p>
+      <div>
+        <button type="button" id="toggleCcBccBtn" class="collapsible-trigger">+ Add CC / BCC</button>
+      </div>
 
-    <label>6. Body template</label>
-    <textarea id="body">Hi {{Name}},
+      <div id="ccBccContainer" class="hidden">
+        <label for="cc">CC</label>
+        <input id="cc" placeholder="Optional: email@example.com or {{CcEmail}}" />
 
-This is a quick reminder about {{Course}}.</textarea>
+        <label for="bcc">BCC</label>
+        <input id="bcc" placeholder="Optional: email@example.com or {{BccEmail}}" />
+        <p id="copyRecipientHint" class="hint"></p>
+      </div>
 
+      <label for="body">Body</label>
+      <textarea id="body">Hi {{Name}},&#10;&#10;This is a quick reminder about {{Course}}.</textarea>
+    </section>
+
+    <!-- Card 3: Settings -->
+    <section class="card">
+      <div class="card-title">
+        <span><span class="card-title-icon">⚙️</span>3. Compose Settings</span>
+      </div>
+
+      <label>Service Mode</label>
+      <div class="segmented-control">
+        <button type="button" class="segmented-btn active" data-mode="outlook">
+          <span>Outlook Web</span>
+        </button>
+        <button type="button" class="segmented-btn" data-mode="gmail">
+          <span>Gmail</span>
+        </button>
+      </div>
+      <!-- Hidden native select for 100% test & programmatic compatibility -->
+      <select id="composeMode" style="display: none;">
+        <option value="outlook">Outlook Mode</option>
+        <option value="gmail">Gmail Mode</option>
+      </select>
+      <p id="composeModeHint" class="hint"></p>
+
+      <div class="setting-callout">
+        <label class="checkbox-label">
+          <input type="checkbox" id="autoSend" />
+          <span>Auto-Send Drafts</span>
+          <span class="callout-badge">Experimental</span>
+        </label>
+        <p class="hint" style="margin-top: 4px; color: var(--warning-text);">
+          Clicks "Send" on opened compose tabs automatically. Keep unchecked to review each draft manually.
+        </p>
+      </div>
+
+      <div class="row-settings">
+        <label for="batchDelay">Batch Opening Speed:</label>
+        <select id="batchDelay">
+          <option value="500">0.5s (Fast)</option>
+          <option value="1000" selected>1.0s (Normal)</option>
+          <option value="2000">2.0s (Safe / Large)</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- Action Buttons -->
     <div class="row">
-      <button id="loadBtn">Generate Drafts</button>
-      <button id="clearStateBtn" type="button" class="secondary">Clear Saved Data</button>
+      <button id="loadBtn" type="button">Generate Drafts</button>
+      <button id="clearStateBtn" type="button">Clear Data</button>
     </div>
 
+    <!-- Status & Progress -->
     <section id="status"></section>
-    <section id="preview"></section>
-    <div class="hidden preview-controls" id="previewControls">
-      <button id="previewPrevBtn" type="button" class="secondary">Previous Preview</button>
-      <span id="previewCounter"></span>
-      <button id="previewNextBtn" type="button" class="secondary">Next Preview</button>
+    <div id="progressContainer" class="progress-container hidden">
+      <div id="progressBar" class="progress-bar"></div>
     </div>
 
+    <!-- Preview Controls & Card -->
+    <div class="hidden preview-controls" id="previewControls">
+      <button id="previewPrevBtn" type="button">◀ Previous</button>
+      <span id="previewCounter"></span>
+      <button id="previewNextBtn" type="button">Next ▶</button>
+    </div>
+
+    <section id="preview"></section>
+
+    <!-- Batch Send Controls -->
     <section class="hidden" id="sendControls">
-      <button id="openNextBtn">Open Preview Draft</button>
+      <button id="openNextBtn" type="button">Open Preview Draft</button>
       <div class="range-controls">
         <label>
           From
@@ -82,9 +159,13 @@ This is a quick reminder about {{Course}}.</textarea>
           To
           <input id="rangeEnd" type="number" min="1" />
         </label>
-        <button id="openRangeBtn">Open Selected Drafts</button>
+        <button id="openRangeBtn" type="button">Open Selected Drafts</button>
       </div>
     </section>
+
+    <div class="footer-note">
+      🔒 100% Local Execution: CSV data never leaves your browser.
+    </div>
   </main>
   
 <script>

@@ -26,16 +26,35 @@ function markGmailTargetCompose() {
   return false;
 }
 
+function isOutlookSendButton(btn) {
+  // Outlook send button usually has aria-label="Send" or title="Send" (or "发送" in Chinese)
+  const label = btn.getAttribute('aria-label') || btn.getAttribute('title') || btn.textContent;
+  if (!label) return false;
+  const trimmed = label.trim().toLowerCase();
+  return trimmed === 'send' || trimmed === '发送' || label.trim().startsWith('发送');
+}
+
 function markOutlookTargetCompose() {
   const subject = decodedParam('subject');
   const composeContainers = [...document.querySelectorAll('[role="dialog"], form')];
 
-  if (!subject && composeContainers.length !== 1) return false;
+  if (subject || composeContainers.length === 1) {
+    for (const container of composeContainers) {
+      const text = container.textContent || '';
+      if (!subject || text.includes(subject)) {
+        container.setAttribute('data-mail-merge-target', 'true');
+        return true;
+      }
+    }
+  }
 
-  for (const container of composeContainers) {
-    const text = container.textContent || '';
-    if (!subject || text.includes(subject)) {
-      container.setAttribute('data-mail-merge-target', 'true');
+  // Full-page deeplink compose has no dialog or form, and the subject only lives in an input value.
+  // Mark the closest ancestor of that input which also holds the Send button.
+  if (!subject) return false;
+  const subjectInput = [...document.querySelectorAll('input')].find(input => input.value === subject);
+  for (let node = subjectInput?.parentElement; node; node = node.parentElement) {
+    if ([...node.querySelectorAll('button')].some(isOutlookSendButton)) {
+      node.setAttribute('data-mail-merge-target', 'true');
       return true;
     }
   }
@@ -66,22 +85,15 @@ function findAndClickSend() {
     const buttons = document.querySelectorAll('[data-mail-merge-target="true"] div[role="button"]');
     for (const btn of buttons) {
       const label = btn.getAttribute('aria-label');
-      // Sometimes it's "Send" or "Send ‪(Ctrl-Enter)‬"
-      if (label && label.toLowerCase().startsWith('send')) {
+      // Supports "Send", "Send ‪(Ctrl-Enter)‬", "发送", "发送 ‪(Ctrl-Enter)‬"
+      if (label && (label.toLowerCase().startsWith('send') || label.trim().startsWith('发送'))) {
         sendButton = btn;
         break;
       }
     }
   } else if (isOutlook) {
-    // Outlook send button usually has aria-label="Send" or title="Send"
     const buttons = document.querySelectorAll('[data-mail-merge-target="true"] button');
-    for (const btn of buttons) {
-      const label = btn.getAttribute('aria-label') || btn.getAttribute('title') || btn.textContent;
-      if (label && label.trim().toLowerCase() === 'send') {
-        sendButton = btn;
-        break;
-      }
-    }
+    sendButton = [...buttons].find(isOutlookSendButton) || null;
   }
 
   if (sendButton) {

@@ -3,8 +3,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT/dist"
+VERSION="$(node -p "require('./manifest.json').version")"
 PACKAGE_DIR="$DIST_DIR/mail-merge-draft-helper"
-ZIP_PATH="$DIST_DIR/mail-merge-draft-helper-0.1.0.zip"
+ZIP_PATH="$DIST_DIR/mail-merge-draft-helper-${VERSION}.zip"
 
 rm -rf "$PACKAGE_DIR"
 mkdir -p "$PACKAGE_DIR/icons" "$DIST_DIR"
