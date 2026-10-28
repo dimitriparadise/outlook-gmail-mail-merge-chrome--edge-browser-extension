@@ -15,6 +15,7 @@ The extension runs locally in the browser popup. You paste or upload a CSV, writ
 - Keep progress locally with `chrome.storage.local`.
 - Clear saved local data at any time.
 - Optional experimental Auto-Send mode with clearer "Open & Send..." button labels.
+- Import or export an email plan: one `.json` file with the recipient list, templates, and compose settings.
 
 ## How It Works
 
@@ -56,6 +57,30 @@ BCC:
 ```
 
 Use a real line break between the header row and the first data row. Visual wrapping inside the text box does not count as a CSV row break.
+
+## Email Plans
+
+An email plan is a single `.json` file that sets up the whole popup at once: the recipient CSV, subject, body, CC, BCC, service mode, and opening speed.
+
+- `Import Plan` (or dropping a `.json` file on the CSV drop zone) fills every field and loads the recipients. Then review the template and click `Generate Drafts`.
+- `Export Plan` downloads the current setup as `mail-merge-plan-YYYY-MM-DD.json`, so it can be reused or edited later. The file contains your recipient list, so keep it private.
+- Auto-Send is never saved in a plan and is always turned off after an import.
+
+`csv` and `body` can be a single string or an array of lines, which is easier to edit by hand:
+
+```json
+{
+  "type": "mail-merge-plan",
+  "version": 1,
+  "name": "Sample event invite",
+  "csv": ["FirstName,Email", "Ada,ada@example.com"],
+  "subject": "You're invited, {{FirstName}}!",
+  "body": ["Hi {{FirstName}},", "", "Hope to see you there!"],
+  "settings": { "composeMode": "outlook", "batchDelay": 2000 }
+}
+```
+
+`composeMode` is `outlook` or `gmail`; `batchDelay` is `500`, `1000`, or `2000` milliseconds. See `examples/sample-plan.json` for a complete example.
 
 ## Gmail And Outlook Modes
 

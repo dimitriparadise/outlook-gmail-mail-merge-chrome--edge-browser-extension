@@ -15,6 +15,7 @@ Mail Merge Draft Helper 是一个轻量级 Chrome 插件，用来根据 CSV 名�
 - 使用 `chrome.storage.local` 在本地保存进度。
 - 可以随时点击 `Clear Saved Data` 清除本地保存的数据。
 - 包含实验性的 Auto-Send 模式，并会在按钮上明确显示 `Open & Send...`。
+- 支持导入/导出邮件方案：一个 `.json` 文件包含名单、模板和发送设置。
 
 ## 使用流程
 
@@ -56,6 +57,30 @@ BCC:
 ```
 
 注意：header row 和第一行数据之间必须有真实换行。文本框里的自动视觉换行不等于 CSV row break。
+
+## 邮件方案（Email Plan）
+
+邮件方案是一个 `.json` 文件，可以一次性准备好整个弹窗：收件人 CSV、主题、正文、CC、BCC、Gmail/Outlook 模式和打开间隔。
+
+- 点击 `Import Plan`（或把 `.json` 文件拖到 CSV 上传区）会填好所有字段并载入名单。检查模板后点击 `Generate Drafts`。
+- 点击 `Export Plan` 会把当前设置下载为 `mail-merge-plan-YYYY-MM-DD.json`，方便以后复用或修改。文件里包含收件人名单，请妥善保管。
+- 方案文件不会保存 Auto-Send，导入后 Auto-Send 一律是关闭的。
+
+`csv` 和 `body` 可以写成一整段文字，也可以写成按行排列的数组，手动编辑更方便：
+
+```json
+{
+  "type": "mail-merge-plan",
+  "version": 1,
+  "name": "Sample event invite",
+  "csv": ["FirstName,Email", "Ada,ada@example.com"],
+  "subject": "You're invited, {{FirstName}}!",
+  "body": ["Hi {{FirstName}},", "", "Hope to see you there!"],
+  "settings": { "composeMode": "outlook", "batchDelay": 2000 }
+}
+```
+
+`composeMode` 可以是 `outlook` 或 `gmail`；`batchDelay` 可以是 `500`、`1000` 或 `2000`（毫秒）。完整示例见 `examples/sample-plan.json`。
 
 ## Gmail 和 Outlook 模式
 

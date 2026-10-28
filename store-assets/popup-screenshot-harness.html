@@ -14,8 +14,18 @@
           <h1>Mail Merge Helper</h1>
         </div>
       </div>
-      <span class="version-badge">v0.1.1</span>
+      <span class="version-badge">v0.1.2</span>
     </header>
+
+    <!-- Plan Import / Export -->
+    <section class="plan-bar">
+      <span class="plan-bar-label"><span class="card-title-icon">📦</span>Email Plan</span>
+      <div class="plan-bar-actions">
+        <button type="button" id="importPlanBtn" class="plan-btn">Import Plan</button>
+        <button type="button" id="exportPlanBtn" class="plan-btn">Export Plan</button>
+      </div>
+      <input id="planFile" type="file" accept=".json,application/json" class="hidden" />
+    </section>
 
     <!-- Card 1: Data Source -->
     <section class="card">
@@ -28,7 +38,7 @@
         <input id="csvFile" type="file" accept=".csv,text/csv" />
         <div class="drop-zone-icon">📄</div>
         <div class="drop-zone-text">
-          <span class="drop-zone-highlight">Click to browse</span> or drag & drop CSV file
+          <span class="drop-zone-highlight">Click to browse</span> or drag & drop CSV file (or a plan .json)
         </div>
       </div>
 
@@ -64,7 +74,7 @@
       </div>
 
       <label for="subject">Subject</label>
-      <input id="subject" value="Reminder for {{Course}}" />
+      <input id="subject" type="text" value="Reminder for {{Course}}" />
 
       <div>
         <button type="button" id="toggleCcBccBtn" class="collapsible-trigger">+ Add CC / BCC</button>
@@ -72,10 +82,10 @@
 
       <div id="ccBccContainer" class="hidden">
         <label for="cc">CC</label>
-        <input id="cc" placeholder="Optional: email@example.com or {{CcEmail}}" />
+        <input id="cc" type="text" placeholder="Optional: email@example.com or {{CcEmail}}" />
 
         <label for="bcc">BCC</label>
-        <input id="bcc" placeholder="Optional: email@example.com or {{BccEmail}}" />
+        <input id="bcc" type="text" placeholder="Optional: email@example.com or {{BccEmail}}" />
         <p id="copyRecipientHint" class="hint"></p>
       </div>
 

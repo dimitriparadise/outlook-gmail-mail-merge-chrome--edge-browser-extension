@@ -19,6 +19,9 @@ const TEMPLATE_PRESETS = {
     body: ''
   }
 };
+const PLAN_TYPE = 'mail-merge-plan';
+const PLAN_VERSION = 1;
+const BATCH_DELAY_OPTIONS = ['500', '1000', '2000'];
 const COMPOSE_MODE_HINTS = {
   outlook: 'Outlook Web: Drafts open in Outlook Web compose tabs (mailto is used if CC/BCC is present).',
   gmail: 'Gmail: Drafts open in Gmail compose tabs with full To, CC, BCC, subject, and body support.'
@@ -535,6 +538,131 @@ function getSelectedRange() {
   return { startIndex: start - 1, endIndex: end - 1 };
 }
 
+// Plan files bundle the recipient CSV, templates, and compose settings.
+// Auto-Send is never stored in a plan and is always turned off on import.
+function buildPlan() {
+  const csv = getCsvText();
+  if (!csv) throw new Error('Load a recipient CSV before exporting a plan.');
+  return {
+    type: PLAN_TYPE,
+    version: PLAN_VERSION,
+    exportedAt: new Date().toISOString(),
+    csv,
+    subject: $('subject')?.value ?? '',
+    cc: $('cc')?.value ?? '',
+    bcc: $('bcc')?.value ?? '',
+    body: $('body')?.value ?? '',
+    settings: {
+      composeMode: $('composeMode')?.value ?? 'outlook',
+      batchDelay: Number.parseInt($('batchDelay')?.value || `${DEFAULT_DELAY_MS}`, 10) || DEFAULT_DELAY_MS
+    }
+  };
+}
+
+function parsePlan(text) {
+  let plan;
+  try {
+    plan = JSON.parse(String(text ?? '').replace(/^﻿/, ''));
+  } catch {
+    throw new Error('This plan file is not valid JSON.');
+  }
+  if (!plan || typeof plan !== 'object' || plan.type !== PLAN_TYPE) {
+    throw new Error('This file is not a Mail Merge plan.');
+  }
+  if (plan.version !== PLAN_VERSION) {
+    throw new Error(`Unsupported plan version: ${plan.version}.`);
+  }
+
+  // Text fields may also be written as an array of lines, which is easier to edit by hand.
+  const textField = key => {
+    const value = plan[key] ?? '';
+    if (Array.isArray(value) && value.every(line => typeof line === 'string')) return value.join('\n');
+    if (typeof value !== 'string') throw new Error(`Plan field "${key}" must be text.`);
+    return value;
+  };
+
+  const csv = textField('csv');
+  if (!csv.trim()) throw new Error('This plan has no recipient CSV.');
+  const settings = plan.settings && typeof plan.settings === 'object' ? plan.settings : {};
+  const batchDelay = String(settings.batchDelay ?? DEFAULT_DELAY_MS);
+
+  return {
+    name: typeof plan.name === 'string' ? plan.name.trim() : '',
+    csv,
+    subject: textField('subject'),
+    cc: textField('cc'),
+    bcc: textField('bcc'),
+    body: textField('body'),
+    composeMode: settings.composeMode === 'gmail' ? 'gmail' : 'outlook',
+    batchDelay: BATCH_DELAY_OPTIONS.includes(batchDelay) ? batchDelay : String(DEFAULT_DELAY_MS)
+  };
+}
+
+async function applyPlan(plan) {
+  const previousHeaders = csvHeaders;
+  const planRows = parseCSV(plan.csv);
+  if (!planRows.length) {
+    csvHeaders = previousHeaders;
+    throw new Error('The plan CSV has no rows with an email address.');
+  }
+
+  rows = planRows;
+  generated = [];
+  currentIndex = 0;
+  previewIndex = 0;
+
+  // Clear a previously chosen CSV file so "Generate Drafts" uses the plan's list.
+  if ($('csvFile')) $('csvFile').value = '';
+  if ($('csvText')) $('csvText').value = plan.csv;
+  if ($('subject')) $('subject').value = plan.subject;
+  if ($('cc')) $('cc').value = plan.cc;
+  if ($('bcc')) $('bcc').value = plan.bcc;
+  if ($('body')) $('body').value = plan.body;
+  if ($('templatePreset')) $('templatePreset').value = '';
+  if ($('composeMode')) $('composeMode').value = plan.composeMode;
+  if ($('batchDelay')) $('batchDelay').value = plan.batchDelay;
+  if ($('autoSend')) $('autoSend').checked = false;
+  if ($('sendControls')) $('sendControls').classList.add('hidden');
+  if ($('previewControls')) $('previewControls').classList.add('hidden');
+  if ($('preview')) $('preview').innerHTML = '';
+
+  updateCcBccVisibility(Boolean(plan.cc || plan.bcc));
+  updateCsvSummary();
+  renderVariableButtons();
+  renderComposeModeHints();
+  syncDraftActionLabels();
+  await saveState();
+  return rows.length;
+}
+
+async function importPlanFile(file) {
+  try {
+    const plan = parsePlan(await file.text());
+    const count = await applyPlan(plan);
+    const label = plan.name ? `"${plan.name}"` : `from "${file.name}"`;
+    renderStatus(`Plan ${label} imported: ${count} recipients. Auto-Send is off. Review the template, then click "Generate Drafts".`, 'ok');
+  } catch (err) {
+    renderStatus(err.message, 'error');
+  }
+}
+
+function planFileName(date = new Date()) {
+  const pad = value => String(value).padStart(2, '0');
+  return `mail-merge-plan-${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}.json`;
+}
+
+function downloadPlan(plan) {
+  const blob = new Blob([JSON.stringify(plan, null, 2) + '\n'], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const fileName = planFileName();
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return fileName;
+}
+
 // Event Listeners Initialization
 TEMPLATE_FIELD_IDS.forEach(id => {
   if ($(id)) {
@@ -618,6 +746,10 @@ if (dropZone) {
     const dt = e.dataTransfer;
     if (dt && dt.files && dt.files.length) {
       const file = dt.files[0];
+      if (/\.json$/i.test(file.name)) {
+        await importPlanFile(file);
+        return;
+      }
       const text = await file.text();
       if ($('csvText')) $('csvText').value = text;
       try {
@@ -635,6 +767,32 @@ if ($('csvFile')) {
     try {
       await loadRows();
       renderStatus(`CSV file selected (${rows.length} rows). Click "Generate Drafts".`, 'ok');
+    } catch (err) {
+      renderStatus(err.message, 'error');
+    }
+  });
+}
+
+if ($('importPlanBtn')) {
+  $('importPlanBtn').addEventListener('click', () => {
+    $('planFile')?.click();
+  });
+}
+
+if ($('planFile')) {
+  $('planFile').addEventListener('change', async () => {
+    const file = $('planFile').files?.[0];
+    if (!file) return;
+    await importPlanFile(file);
+    $('planFile').value = '';
+  });
+}
+
+if ($('exportPlanBtn')) {
+  $('exportPlanBtn').addEventListener('click', () => {
+    try {
+      const fileName = downloadPlan(buildPlan());
+      renderStatus(`Plan exported as "${fileName}". It contains your recipient list, so keep it somewhere private.`, 'ok');
     } catch (err) {
       renderStatus(err.message, 'error');
     }
