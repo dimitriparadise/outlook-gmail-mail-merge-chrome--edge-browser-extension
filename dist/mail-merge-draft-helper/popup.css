@@ -118,6 +118,45 @@ h1 {
   margin-right: 6px;
 }
 
+/* Plan Import / Export */
+.plan-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px 8px 14px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow-card);
+}
+
+.plan-bar-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.plan-bar-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.plan-btn {
+  padding: 6px 10px;
+  font-size: 12px;
+  background: #ffffff;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.plan-btn:hover:not(:disabled) {
+  background: var(--primary-light);
+  color: var(--primary);
+  border-color: var(--primary-border);
+}
+
 /* Form Elements */
 label {
   display: block;

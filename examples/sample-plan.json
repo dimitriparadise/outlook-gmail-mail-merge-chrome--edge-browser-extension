@@ -1,0 +1,28 @@
+{
+  "type": "mail-merge-plan",
+  "version": 1,
+  "name": "Sample event invite",
+  "csv": [
+    "FirstName,LastName,Email",
+    "Ada,Lovelace,ada.lovelace@example.com",
+    "Grace,Hopper,grace.hopper@example.com",
+    "Alan,Turing,alan.turing@example.com"
+  ],
+  "subject": "You're invited, {{FirstName}}!",
+  "cc": "",
+  "bcc": "",
+  "body": [
+    "Hi {{FirstName}},",
+    "",
+    "I'd like to invite you to our workshop next week.",
+    "",
+    "Date: Tuesday, 12:30-2:00 PM",
+    "Location: Room 101",
+    "",
+    "Hope to see you there!"
+  ],
+  "settings": {
+    "composeMode": "outlook",
+    "batchDelay": 2000
+  }
+}
