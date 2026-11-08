@@ -1,72 +1,106 @@
 # Mail Merge Draft Helper
 
-Mail Merge Draft Helper is a lightweight Chrome extension for creating personalized Gmail or Outlook Web email drafts from a CSV file. It is designed for instructors, administrators, and small teams who need to prepare many similar messages while still reviewing each email before it goes out.
+[中文说明](README.zh-CN.md)
 
-The extension runs locally in the browser popup. You paste or upload a CSV, write reusable subject and body templates, preview each personalized message, and open the selected draft in Gmail or Outlook Web.
+Mail Merge Draft Helper is a lightweight Chrome / Edge extension that turns a CSV list into personalized Outlook Web or Gmail emails. It is built for instructors, administrators, and small teams who send many similar messages but still want to review each one before it goes out.
 
-## Highlights
+Everything runs locally in the extension popup. You load a recipient list, write one template with variables such as `{{FirstName}}`, preview every personalized message, and open the drafts in Outlook Web or Gmail, one at a time or in batches.
 
-- Create personalized Gmail or Outlook Web drafts from CSV rows.
-- Use template variables such as `{{Name}}`, `{{Course}}`, or any other CSV column.
-- Preview each generated message before opening it.
-- Open the current preview draft or open a selected range of drafts.
-- Add optional CC and BCC values, including values from CSV columns.
-- Get preflight warnings for missing variables, invalid email addresses, duplicate recipients, and To/CC/BCC overlap.
-- Keep progress locally with `chrome.storage.local`.
-- Clear saved local data at any time.
-- Optional experimental Auto-Send mode with clearer "Open & Send..." button labels.
-- Import or export an email plan: one `.json` file with the recipient list, templates, and compose settings.
+<p align="center"><img src="docs/images/02-popup-overview.png" alt="The extension popup" width="360"></p>
 
-## How It Works
+## Contents
 
-1. Upload a CSV file or paste CSV text into the popup.
-2. Choose Gmail Mode or Outlook Mode.
-3. Customize the subject, body, CC, and BCC templates.
-4. Click `Generate Drafts`.
-5. Review each personalized preview.
-6. Click `Open Preview Draft`, or choose a From/To range and click `Open Selected Drafts`.
+- [Install](#install)
+- [Step-by-step tutorial](#step-by-step-tutorial)
+- [Email plans (import / export)](#email-plans-import--export)
+- [Auto-Send (experimental)](#auto-send-experimental)
+- [Tips for large mailings](#tips-for-large-mailings)
+- [CSV format](#csv-format)
+- [Troubleshooting](#troubleshooting)
+- [Privacy and permissions](#privacy-and-permissions)
+- [Limitations](#limitations)
+- [Development](#development)
 
-When Auto-Send is enabled, the single-draft button changes to `Open & Send Preview Email`, and the range button changes to `Open & Send Selected Emails`.
+## Install
 
-## CSV Format
+The extension is not on the Chrome Web Store yet, so it is installed as an "unpacked" extension. This takes about a minute.
 
-Your CSV must include a header row and at least one data row. It must include either `Email` or `email`.
+1. Open the [latest release](https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension/releases/latest) and download `mail-merge-draft-helper-<version>.zip`.
+2. Unzip it into a folder you will keep (for example `Documents/mail-merge-draft-helper`). Do not delete this folder later: Chrome loads the extension from it.
+3. In Chrome, go to `chrome://extensions` (in Edge: `edge://extensions`).
+4. Turn on **Developer mode** (top right in Chrome; left sidebar in Edge).
+5. Click **Load unpacked** and choose the unzipped folder (the one that contains `manifest.json`).
 
-```csv
-Name,Email,Course,Section,DueDate,CcEmail,BccEmail
-John,john@example.com,ISOM 210,A,Friday,ta@example.com,archive@example.com
-Jane,jane@example.com,ISOM 340,B,Monday,ta@example.com,archive@example.com
-```
+![Developer mode and Load unpacked on chrome://extensions](docs/images/01-load-unpacked.png)
 
-Any header can be used as a template variable:
+6. Click the puzzle-piece icon in the toolbar and pin **Mail Merge Draft Helper** so it is one click away.
 
-```text
-Subject:
-Reminder for {{Course}}
+**Updating:** download the new zip, replace the files in the same folder, then click the reload button (↻) on the extension's card in `chrome://extensions`.
 
-Body:
-Hi {{Name}},
+## Step-by-step tutorial
 
-This is a quick reminder about {{Course}} section {{Section}}, due {{DueDate}}.
+The popup has three numbered cards (recipients, template, settings), followed by **Generate Drafts**, a preview, and the buttons that open drafts.
 
-CC:
-{{CcEmail}}
+### Step 1 — Load your recipient list
 
-BCC:
-{{BccEmail}}
-```
+Click the drop zone in **1. Recipient CSV Data** and choose a CSV file, or drag the file onto it. The badge shows how many rows were loaded. You can also click **Or paste / view raw CSV text** and paste the CSV directly.
 
-Use a real line break between the header row and the first data row. Visual wrapping inside the text box does not count as a CSV row break.
+![A CSV file loaded, showing "3 rows loaded"](docs/images/03-load-csv.png)
 
-## Email Plans
+The CSV needs a header row and an email column (`Email`, `E-mail`, `Mail`, `邮箱`, `To`, ...). Every other column becomes a template variable. Try it with [`examples/sample-recipients.csv`](examples/sample-recipients.csv), or see [CSV format](#csv-format).
 
-An email plan is a single `.json` file that sets up the whole popup at once: the recipient CSV, subject, body, CC, BCC, service mode, and opening speed.
+> Already have everything prepared? Use **Import Plan** instead to load the list, subject, body, and settings in one go. See [Email plans](#email-plans-import--export).
 
-- `Import Plan` (or dropping a `.json` file on the CSV drop zone) fills every field and loads the recipients. Then review the template and click `Generate Drafts`.
-- `Export Plan` downloads the current setup as `mail-merge-plan-YYYY-MM-DD.json`, so it can be reused or edited later. The file contains your recipient list, so keep it private.
-- Auto-Send is never saved in a plan and is always turned off after an import.
+### Step 2 — Write the template
 
-`csv` and `body` can be a single string or an array of lines, which is easier to edit by hand:
+In **2. Email Template**, write the subject and body. The **Click to insert variable** panel shows one button per CSV column; click a button to insert that variable where your cursor is. Each `{{Variable}}` is replaced with the value from that recipient's row.
+
+![Template card with variable buttons](docs/images/05-template.png)
+
+- Use **+ Add CC / BCC** for copy recipients. These fields accept variables too, such as `{{CcEmail}}`.
+- The **Preset** menu has a starter template you can overwrite.
+- The body is plain text: line breaks are kept, but there is no bold, color, or images.
+
+### Step 3 — Choose the mail service and speed
+
+In **3. Compose Settings**:
+
+- **Service Mode:** `Outlook Web` (outlook.office.com, work or school accounts) or `Gmail`.
+- **Batch Opening Speed:** the pause between drafts when you open a range. Use `2.0s (Safe / Large)` for lists longer than a few dozen.
+- **Auto-Send Drafts:** leave it unchecked until you have tested your setup. See [Auto-Send](#auto-send-experimental).
+
+![Compose settings card](docs/images/06-settings.png)
+
+### Step 4 — Generate and preview
+
+Click **Generate Drafts**. The extension builds one message per row and shows a preview. Use **◀ Previous / Next ▶** to check a few recipients: the names, subject, and body should all be filled in.
+
+![Generated preview with Previous / Next controls](docs/images/07-preview.png)
+
+If something is wrong, a red preflight warning lists it (for example an unknown variable such as `{{Coursee}}`, an invalid or duplicate email address, or the same address in To and CC). Fix the CSV or template and click **Generate Drafts** again.
+
+### Step 5 — Open the drafts
+
+- **Open Preview Draft** opens the message you are currently previewing.
+- To open many at once, enter a **From / To** range (row numbers, starting at 1) and click **Open Selected Drafts**. Each draft opens in its own background tab, using the speed from Step 3.
+
+![Open Preview Draft and the From / To range controls](docs/images/08-open-drafts.png)
+
+Each tab is a normal Outlook or Gmail compose window with the recipient, subject, and body filled in. Review it and click **Send** yourself. The extension remembers how far you got, so after closing and reopening the popup the range starts where you left off.
+
+## Email plans (import / export)
+
+An email plan is one `.json` file that sets up the whole popup at once: the recipient list, subject, body, CC, BCC, service mode, and opening speed. It is useful when you send the same kind of email again, or when someone prepares the mailing for you.
+
+![Import Plan and Export Plan buttons](docs/images/04-import-plan-bar.png)
+
+- **Import Plan** (or dropping a `.json` file on the CSV drop zone) fills every field and loads the recipients. Then review the template and click **Generate Drafts**.
+- **Export Plan** saves the current setup as `mail-merge-plan-YYYY-MM-DD.json`. The file contains your recipient list, so store it privately.
+- Auto-Send is never saved in a plan and is always switched off after an import.
+
+![Status message after importing a plan](docs/images/04-import-plan-status.png)
+
+Plans are easy to write or edit by hand. `csv` and `body` can be a single string or an array of lines:
 
 ```json
 {
@@ -80,78 +114,102 @@ An email plan is a single `.json` file that sets up the whole popup at once: the
 }
 ```
 
-`composeMode` is `outlook` or `gmail`; `batchDelay` is `500`, `1000`, or `2000` milliseconds. See `examples/sample-plan.json` for a complete example.
+`composeMode` is `outlook` or `gmail`; `batchDelay` is `500`, `1000`, or `2000` (milliseconds). A complete example is in [`examples/sample-plan.json`](examples/sample-plan.json).
 
-## Gmail And Outlook Modes
+## Auto-Send (experimental)
 
-`Gmail Mode` opens Gmail compose URLs directly and supports To, CC, BCC, subject, and body.
+When **Auto-Send Drafts** is checked, the extension also clicks **Send** in each compose tab it opens, then tries to close the tab. The buttons change to **Open & Send Preview Email** and **Open & Send Selected Emails** so it is always clear that emails will go out.
 
-`Outlook Mode` opens Outlook Web compose links. If a generated message has CC or BCC recipients, the extension uses `mailto:` because Outlook Web compose links may ignore copy recipients in some tenants.
+![Auto-Send checked](docs/images/09-auto-send.png)
 
-Auto-Send cannot be used with Outlook Mode when CC or BCC is present. Use Gmail Mode or turn off Auto-Send for those messages.
+![Buttons in Auto-Send mode](docs/images/09-auto-send-buttons.png)
 
-## Privacy
+Before relying on it:
 
-Mail Merge Draft Helper does not run a backend service and does not send your CSV data to a third-party server.
+- **Send one test email to yourself first.** Put your own address in the first row and send only row 1. Check that it arrives and that the compose tab did not just stay open.
+- It only acts on compose tabs opened by the extension, and only on the matching draft.
+- It recognizes Send buttons labeled "Send" or "发送". If your Outlook or Gmail uses another language, it gives up after 15 seconds and leaves the draft open for you.
+- In Outlook mode it cannot be combined with CC or BCC (those drafts use `mailto:`). Use Gmail mode or turn Auto-Send off.
+- After an extension update, reload it in `chrome://extensions` so the new version runs.
 
-The extension stores CSV text, templates, generated draft data, and progress locally in Chrome extension storage so you can close and reopen the popup without losing your place. Use `Clear Saved Data` to remove this local saved state.
+## Tips for large mailings
 
-The extension requests:
+- **Split the list into batches of about 40–50.** Load the whole list and send rows 1–50, then 51–100 later; or prepare one CSV or plan per batch.
+- **Leave some time between batches.** Mail providers may throttle or flag accounts that send many messages in a short burst.
+- **Test with yourself first** (row 1 = your own address), especially before using Auto-Send.
+- **Use `2.0s (Safe / Large)` speed** so the browser and Outlook keep up.
+- **Keep the list minimal.** Only include the columns the template needs; leave out grades, IDs, and other sensitive fields.
 
-- `storage`: saves your local draft-generation state.
-- Gmail and Outlook host permissions: allows the optional Auto-Send content script to identify the compose window opened by the extension.
+## CSV format
+
+The CSV needs a header row, at least one data row, and an email column. Any header can be used as a variable:
+
+```csv
+FirstName,LastName,Email,Course,CcEmail
+Ada,Lovelace,ada.lovelace@example.com,ISOM 210,ta@example.com
+Grace,Hopper,grace.hopper@example.com,ISOM 340,ta@example.com
+```
+
+```text
+Subject:  Reminder for {{Course}}
+Body:     Hi {{FirstName}},
+
+          This is a quick reminder about {{Course}}.
+CC:       {{CcEmail}}
+```
+
+- Values that contain commas or line breaks must be wrapped in double quotes.
+- Variable names are case-sensitive: `{{firstname}}` does not match a `FirstName` column.
+- When pasting, there must be a real line break between the header row and the first data row; wrapping inside the text box does not count.
+- Excel: use **File → Save As → CSV UTF-8** so non-English names are kept intact.
+
+## Troubleshooting
+
+| Problem | What to do |
+|---|---|
+| "CSV needs a header row and at least one data row" | Make sure the first line is the header and each recipient is on its own line. |
+| Preflight warning "Unknown template variable" | The variable name does not match a CSV header exactly (spelling and capitalization). |
+| A `{{Variable}}` shows up literally in the email | Same as above, or that row's cell is empty. |
+| Outlook opens but the To / Subject is empty | Make sure you are signed in to Outlook Web in the same browser profile, then open the draft again. |
+| Auto-Send did not click Send | Reload the extension in `chrome://extensions`, check the language of the Send button, and see [Auto-Send](#auto-send-experimental). |
+| Tabs open too fast or some fail | Choose `2.0s (Safe / Large)` and send smaller ranges. |
+| Start over | Click **Clear Data**. This removes the saved list, templates, and progress. |
+
+## Privacy and permissions
+
+Mail Merge Draft Helper has no backend and does not send your data to any server. The CSV, templates, generated drafts, and progress are kept in the browser's extension storage so you can close and reopen the popup without losing your place. **Clear Data** removes them. Exported plan files are saved only where your browser saves downloads.
+
+Permissions:
+
+- `storage`: saves the popup state locally.
+- Gmail and Outlook host permissions: let the optional Auto-Send script find the compose window that the extension opened.
+
+The extension does not read your mailbox and does not use the Gmail API or Microsoft Graph. Full policy: [store-assets/privacy-policy.md](store-assets/privacy-policy.md).
 
 ## Limitations
 
-- Attachments are not supported in the current URL-based compose flow.
-- There is no rich-text email editor.
-- Very large ranges may still be limited by browser tab or popup throttling.
-- Auto-Send is experimental. Review your drafts carefully before using it.
+- No attachments (drafts are opened through compose links).
+- Plain-text body only; no rich-text formatting.
+- Very long emails can exceed what a compose link can carry.
+- Auto-Send is experimental and depends on the Outlook / Gmail page layout.
 
-## Local Development
+## Development
 
-1. Open Chrome or Edge.
-2. Go to `chrome://extensions` or `edge://extensions`.
-3. Enable Developer mode.
-4. Click `Load unpacked`.
-5. Select this folder.
-6. Click the extension icon to open the popup.
-
-Run the test suite with:
+1. Clone this repository.
+2. Load the repository folder itself with **Load unpacked** (see [Install](#install)).
+3. After editing, click the reload button on the extension card.
 
 ```bash
 node --test
 ```
 
-Run a syntax check with:
-
 ```bash
-node --check popup.js && node --check content.js
+./scripts/build_release.sh
 ```
 
-## Publishing To The Chrome Web Store
+`build_release.sh` copies the extension files to `dist/mail-merge-draft-helper/` and creates `dist/mail-merge-draft-helper-<version>.zip` using the version in `manifest.json`.
 
-Before publishing, prepare the following:
-
-- A production-ready zip package of the extension files.
-- Store listing name, summary, detailed description, category, language, and screenshots.
-- A 128x128 extension icon and promotional images if you want a stronger listing page.
-- A privacy policy URL if required for your data handling disclosures.
-- Clear permission justifications for `storage` and host permissions.
-- Completed privacy practices and limited-use certification in the Chrome Developer Dashboard.
-
-Publishing flow:
-
-1. Create or sign in to a Chrome Web Store developer account.
-2. Open the [Chrome Developer Dashboard](https://chrome.google.com/webstore/devconsole/).
-3. Click `Add new item`.
-4. Upload the extension zip file.
-5. Complete the store listing fields.
-6. Complete the privacy practices fields.
-7. Set distribution, visibility, and regions.
-8. Submit the item for Chrome Web Store review.
-
-Official references:
+Publishing notes for the Chrome Web Store (listing text, screenshots, review notes, checklist) are in [`store-assets/`](store-assets/). Official references:
 
 - [Publish in the Chrome Web Store](https://developer.chrome.com/docs/webstore/publish)
 - [Chrome Web Store Developer Program Policies](https://developer.chrome.com/docs/webstore/program-policies)

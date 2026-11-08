@@ -22,7 +22,7 @@ Host permissions for Gmail and Outlook are used by the optional Auto-Send conten
 
 The extension does not run a backend service and does not transmit CSV data, draft content, or recipient information to a third-party server.
 
-Data is stored locally in Chrome extension storage and can be deleted from the popup with `Clear Saved Data`.
+Data is stored locally in Chrome extension storage and can be deleted from the popup with `Clear Data`.
 
 ## Auto-Send Safeguards
 

@@ -22,7 +22,7 @@ The extension uses Chrome extension storage to save:
 
 This local storage is used only to let users close and reopen the popup without losing their work.
 
-Users can remove this saved state at any time by clicking `Clear Saved Data` in the extension popup.
+Users can remove this saved state at any time by clicking `Clear Data` in the extension popup.
 
 ## Email Plan Files
 
