@@ -1,12 +1,22 @@
 # Mail Merge Draft Helper 中文说明
 
-[English](README.md)
+[English](README.md) · [Chrome 应用商店](https://chromewebstore.google.com/detail/mail-merge-draft-helper/dgfmchmfppcdjaacmdfmmgldbjldihpf) · [提问或反馈问题](https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension/issues)
 
-Mail Merge Draft Helper 是一个轻量的 Chrome / Edge 扩展，可以把一份 CSV 名单变成一封封个性化的 Outlook Web 或 Gmail 邮件。适合老师、行政人员和小团队：要发很多封内容相似的邮件，但每封发出去之前还想自己看一眼。
+Mail Merge Draft Helper 是一个 Chrome / Edge 扩展，可以把一份 Excel 或 CSV 名单变成一封封个性化的 Outlook Web 或 Gmail 邮件。适合老师、行政人员和小团队：要发很多封内容相似的邮件，但发出去之前还想自己检查一遍。
 
-所有操作都在扩展弹窗里、在你自己的浏览器本地完成。你载入收件人名单，写一份带变量（比如 `{{FirstName}}`）的模板，逐封预览，然后在 Outlook Web 或 Gmail 里打开草稿，可以一封一封打开，也可以按批次打开。
+所有操作都在扩展弹窗里、在你自己的浏览器本地完成：载入名单，写一份带变量（比如 `{{First Name}}`）的模板，看一眼被标出来的收件人，先给自己发一封测试，然后分批打开或发送。
 
-<p align="center"><img src="docs/images/02-popup-overview.png" alt="扩展弹窗" width="360"></p>
+<p align="center"><img src="docs/images/zh/02-popup-overview.png" alt="扩展弹窗" width="360"></p>
+
+**主要功能**
+
+- 直接载入 **Excel（.xlsx）** 或 CSV，并选择要用哪些列。成绩、学号等其他列默认不载入。
+- **收件人检查**：标出名字可能和邮箱对不上、邮箱后缀与众不同、字段为空的收件人，可以直接在弹窗里修改。
+- **先给自己发测试**，确认无误再发给名单。
+- **分批发送**（默认每批 50 封），自动记住进度。
+- **邮件方案**：把名单、模板和设置保存成一个文件，或一次性导入。
+- 界面支持 **English、中文、Español**。
+- 可选的 **自动发送**（实验功能）。
 
 ## 目录
 
@@ -14,9 +24,11 @@ Mail Merge Draft Helper 是一个轻量的 Chrome / Edge 扩展，可以把一�
 - [分步教程](#分步教程)
 - [邮件方案（导入 / 导出）](#邮件方案导入--导出)
 - [自动发送（实验功能）](#自动发送实验功能)
+- [界面语言](#界面语言)
 - [大批量发送建议](#大批量发送建议)
-- [CSV 格式](#csv-格式)
+- [Excel 和 CSV 格式](#excel-和-csv-格式)
 - [常见问题](#常见问题)
+- [帮助和反馈](#帮助和反馈)
 - [隐私和权限](#隐私和权限)
 - [当前限制](#当前限制)
 - [开发](#开发)
@@ -43,72 +55,97 @@ Microsoft Edge 也可以从同一个页面安装：Edge 提示时选择 **允许
 
 ![chrome://extensions 页面上的开发者模式和 Load unpacked](docs/images/01-load-unpacked.png)
 
-6. 点击工具栏上的拼图图标，把 **Mail Merge Draft Helper** 固定（📌）在工具栏上，方便一键打开。
+6. 点击工具栏上的拼图图标，把 **Mail Merge Draft Helper** 固定在工具栏上。
 
 **更新版本：** 下载新的 zip，把同一个文件夹里的文件替换掉，然后在 `chrome://extensions` 里点这个扩展卡片上的刷新按钮（↻）。
 
 ## 分步教程
 
-弹窗里从上到下是三张编号卡片（收件人、模板、设置），下面是 **Generate Drafts** 按钮、预览区和打开草稿的按钮。
+弹窗从上到下是三张编号卡片（收件人、模板、设置），然后是 **生成草稿** 按钮、收件人检查和预览，最下面是发送工具。每一步都可以用 [`examples/`](examples/) 里的示例文件试一试。
 
 ### 第 1 步：载入收件人名单
 
-点击 **1. Recipient CSV Data** 里的虚线框，选择 CSV 文件，或者直接把文件拖进去。右上角会显示读入了多少行。也可以点 **Or paste / view raw CSV text**，直接粘贴 CSV 文本。
+点击 **1. 收件人** 里的虚线框选择文件，或者直接把文件拖进去。Excel（`.xlsx`）和 CSV 都可以。
 
-![载入 CSV 后显示 "3 rows loaded"](docs/images/03-load-csv.png)
+**Excel 文件**会先弹出"选择列"：
 
-CSV 第一行必须是表头，并且要有一列邮箱（列名可以是 `Email`、`E-mail`、`Mail`、`邮箱`、`To` 等）。其他每一列都可以当作模板变量。可以先用 [`examples/sample-recipients.csv`](examples/sample-recipients.csv) 试一试，格式说明见 [CSV 格式](#csv-格式)。
+- **邮箱地址所在列** 会自动识别，选错了可以改。
+- 在 **邮件中要用到的列** 里，勾选模板需要的列。名字相关的列会自动勾上；成绩、学号等其他列默认不勾，不会被载入。
+- 如果有多个工作表，先选工作表。
+- 点击 **使用这些列**。
 
-> 如果名单、主题、正文都已经准备好了，可以直接点 **Import Plan** 一次性导入，见 [邮件方案](#邮件方案导入--导出)。
+![从 Excel 中选择要用的列](docs/images/zh/03-excel-columns.png)
+
+右上角会显示载入了多少位收件人。没有邮箱地址的行会被跳过。
+
+![从 Excel 载入收件人后](docs/images/zh/03-excel-loaded.png)
+
+**CSV 文件**会直接载入。也可以点 **或者粘贴 / 查看 CSV 原文**，直接粘贴名单。格式见 [Excel 和 CSV 格式](#excel-和-csv-格式)。
+
+> 如果名单、主题、正文都已经准备好了，可以点 **导入方案** 一次性载入，见 [邮件方案](#邮件方案导入--导出)。
 
 ### 第 2 步：写邮件模板
 
-在 **2. Email Template** 里填写主题（Subject）和正文（Body）。**Click to insert variable** 区域会为每一列 CSV 生成一个按钮，点一下就会在光标处插入对应的变量。发送时每个 `{{变量}}` 都会换成这位收件人那一行的值。
+在 **2. 邮件模板** 里填写主题和正文。**点击插入变量** 区域会为每一列生成一个按钮，点一下就会在光标处插入对应的变量。发送时每个 `{{变量}}` 都会换成这位收件人那一行的值。
 
-![模板卡片和变量按钮](docs/images/05-template.png)
+![模板卡片和变量按钮](docs/images/zh/05-template.png)
 
-- 需要抄送时，点 **+ Add CC / BCC**。抄送栏里也可以用变量，比如 `{{CcEmail}}`。
-- **Preset** 下拉菜单里有一个示例模板，可以在它的基础上改。
+- 需要抄送时，点 **+ 添加抄送 / 密送**。抄送栏里也可以用变量，比如 `{{CcEmail}}`。
 - 正文是纯文本：换行会保留，但不能加粗、改颜色或插图片。
 
-### 第 3 步：选择邮箱服务和打开速度
+### 第 3 步：选择邮箱服务和每批封数
 
-在 **3. Compose Settings** 里：
+在 **3. 发送设置** 里：
 
-- **Service Mode：** `Outlook Web`（outlook.office.com，学校或工作账号）或 `Gmail`。
-- **Batch Opening Speed：** 批量打开时两封草稿之间的间隔。名单超过几十人时，建议选 `2.0s (Safe / Large)`。
-- **Auto-Send Drafts：** 在测试成功之前先不要勾，见 [自动发送](#自动发送实验功能)。
+- **邮箱服务：** `Outlook Web`（outlook.office.com，学校或工作账号）或 `Gmail`。
+- **打开间隔：** 两封草稿之间的间隔。名单较长时选 `2 秒（稳妥 / 大批量）`。
+- **每批封数：** 分批按钮一次打开多少封（默认 50）。
+- **自动发送：** 测试邮件没问题之前先不要勾，见 [自动发送](#自动发送实验功能)。
 
-![设置卡片](docs/images/06-settings.png)
+![发送设置卡片](docs/images/zh/06-settings.png)
 
-### 第 4 步：生成并预览
+### 第 4 步：生成、检查、预览
 
-点击 **Generate Drafts**，扩展会为每一行生成一封邮件并显示预览。用 **◀ Previous / Next ▶** 多翻几封检查：名字、主题、正文都应该已经替换好了。
+点击 **生成草稿**，扩展会为每位收件人生成一封邮件。
 
-![生成后的预览和翻页按钮](docs/images/07-preview.png)
+**收件人检查**（黄色框）会列出建议看一眼的收件人，但不会阻止发送：
 
-如果有问题，会出现红色的检查提示，比如变量名写错（`{{Coursee}}`）、邮箱格式不对或重复、同一个地址同时出现在收件人和抄送里。改好 CSV 或模板后，再点一次 **Generate Drafts**。
+- 名字可能和邮箱对不上（比如名字是 "Bob"，邮箱是 `robert.smith@...`）；
+- 邮箱后缀和大多数人不一样（比如一群学校邮箱里有一个 `gmail.com`）；
+- 模板用到的某个字段是空的。
 
-### 第 5 步：打开草稿
+可以直接在框里改，改完立即生效；没问题的话点 **没问题** 隐藏这条提示。
 
-- **Open Preview Draft**：打开当前正在预览的这一封。
-- 想一次打开多封：在 **From / To** 里填行号（从 1 开始），再点 **Open Selected Drafts**。每封草稿会在后台单独打开一个标签页，间隔按第 3 步的设置。
+![生成后的收件人检查](docs/images/zh/07-review.png)
 
-![Open Preview Draft 和 From / To 范围](docs/images/08-open-drafts.png)
+然后用 **◀ 上一封 / 下一封 ▶** 翻几封看看。
 
-每个标签页都是正常的 Outlook 或 Gmail 写信窗口，收件人、主题、正文都已填好。检查后由你自己点 **Send** 发送。扩展会记住进度，关掉弹窗再打开时，范围会从上次停下的地方开始。
+![预览和翻页按钮](docs/images/zh/07-preview.png)
+
+红色的 **检查提示** 必须先处理才能发送：变量名写错（如 `{{Coursee}}`）、邮箱无效或重复、同一个地址同时出现在收件人和抄送里。
+
+### 第 5 步：先给自己发测试，再分批发送
+
+1. **先给自己发一封测试：** 填上你自己的邮箱，点 **打开测试草稿（发给我）**。它会用预览里的这封邮件，只发给你自己，主题前加 `[TEST]`。名单和进度都不会改变。
+2. **分批发送：** 点 **打开第 1 批 / 共 N 批**。每封草稿会在后台单独打开一个标签页，检查后发送即可。计数（比如"已打开 50 / 168"）和按钮会自动跳到下一批；关掉弹窗再打开也会记住进度。
+
+![测试发送和分批发送](docs/images/zh/08-send.png)
+
+- 修改模板后再点 **生成草稿**，进度会保留，不会把已经发过的那批再打开一遍。
+- 载入新名单、或手动修改名单原文后，进度会从头开始。想主动从头来，点 **重置进度**。
+- **更多选项** 里可以打开单封，或任意"从 / 到"范围。
 
 ## 邮件方案（导入 / 导出）
 
-邮件方案是一个 `.json` 文件，可以一次性准备好整个弹窗：收件人名单、主题、正文、CC、BCC、Outlook/Gmail 模式和打开速度。适合重复发同类邮件，或者由别人帮你准备好再交给你发送。
+邮件方案是一个 `.json` 文件，可以一次性准备好整个弹窗：收件人名单、主题、正文、抄送、密送、Outlook/Gmail 模式、打开间隔和每批封数。适合重复发同类邮件，或者由别人帮你准备好再交给你发送。
 
-![Import Plan 和 Export Plan 按钮](docs/images/04-import-plan-bar.png)
+![导入方案和导出方案按钮](docs/images/zh/04-import-plan-bar.png)
 
-- **Import Plan**（或把 `.json` 文件拖到 CSV 上传区）：填好所有字段并载入名单。检查模板后点 **Generate Drafts**。
-- **Export Plan**：把当前设置保存为 `mail-merge-plan-YYYY-MM-DD.json`。文件里包含收件人名单，请妥善保管。
+- **导入方案**（或把 `.json` 文件拖到上传区）：填好所有字段并载入名单。检查模板后点 **生成草稿**。
+- **导出方案**：把当前设置保存为 `mail-merge-plan-YYYY-MM-DD.json`。文件里包含收件人名单，请妥善保管。
 - 方案文件不会保存自动发送设置，导入后自动发送一律是关闭的。
 
-![导入方案后的提示](docs/images/04-import-plan-status.png)
+![导入方案后的提示](docs/images/zh/04-import-plan-status.png)
 
 方案文件可以手写或修改。`csv` 和 `body` 可以写成一整段文字，也可以写成按行排列的数组：
 
@@ -120,39 +157,43 @@ CSV 第一行必须是表头，并且要有一列邮箱（列名可以是 `Email
   "csv": ["FirstName,Email", "Ada,ada@example.com"],
   "subject": "You're invited, {{FirstName}}!",
   "body": ["Hi {{FirstName}},", "", "Hope to see you there!"],
-  "settings": { "composeMode": "outlook", "batchDelay": 2000 }
+  "settings": { "composeMode": "outlook", "batchDelay": 2000, "batchSize": 50 }
 }
 ```
 
-`composeMode` 可以是 `outlook` 或 `gmail`；`batchDelay` 可以是 `500`、`1000` 或 `2000`（毫秒）。完整示例见 [`examples/sample-plan.json`](examples/sample-plan.json)。
+`composeMode` 可以是 `outlook` 或 `gmail`；`batchDelay` 可以是 `500`、`1000` 或 `2000`（毫秒）；`batchSize` 是 1–500。完整示例见 [`examples/sample-plan.json`](examples/sample-plan.json)。
 
 ## 自动发送（实验功能）
 
-勾选 **Auto-Send Drafts** 后，扩展在打开每个写信标签页后还会自动点 **Send**，然后尝试关闭这个标签页。按钮文字会变成 **Open & Send Preview Email** 和 **Open & Send Selected Emails**，提醒你邮件会直接发出去。
+勾选 **自动发送** 后，扩展在打开每个写信标签页后还会自动点 **发送**，然后尝试关闭这个标签页。按钮文字会变成 **发送测试给我**、**发送第 1 批** 等，提醒你邮件会直接发出去。
 
-![勾选自动发送](docs/images/09-auto-send.png)
+![勾选自动发送](docs/images/zh/09-auto-send.png)
 
-![自动发送模式下的按钮](docs/images/09-auto-send-buttons.png)
+![自动发送模式下的按钮](docs/images/zh/09-auto-send-buttons.png)
 
 使用前请注意：
 
-- **先给自己发一封测试邮件。** 把第一行改成你自己的邮箱，只发第 1 行，确认收到了，并且写信标签页没有停在草稿状态。
+- **打开自动发送后，先给自己发一封测试**，确认收到了，并且写信标签页没有停在草稿状态。
 - 它只会操作由扩展打开的写信标签页，而且只点对应那封草稿的发送按钮。
 - 只认识写着 "Send" 或"发送"的按钮。如果你的 Outlook 或 Gmail 是其他语言，15 秒后会放弃，草稿留给你手动发送。
-- Outlook 模式下不能和 CC/BCC 同时使用（带抄送的草稿走 `mailto:`）。请改用 Gmail 模式，或关掉自动发送。
+- Outlook 模式下不能和抄送/密送同时使用（带抄送的草稿走 `mailto:`）。请改用 Gmail 模式，或关掉自动发送。
 - 扩展更新后，要在 `chrome://extensions` 里刷新一下，新版本才会生效。
+
+## 界面语言
+
+弹窗右上角的菜单可以切换 **English**、**中文** 和 **Español**。第一次打开时会跟随浏览器的语言，之后会记住你的选择。
 
 ## 大批量发送建议
 
-- **每批 40–50 人左右。** 可以载入整份名单，先发第 1–50 行，过一段时间再发 51–100 行；也可以每批单独准备一个 CSV 或方案文件。
-- **批次之间隔一段时间。** 短时间内发出大量邮件，可能会被邮箱服务限流或标记。
-- **先发给自己测试**（第 1 行放自己的邮箱），用自动发送之前尤其要测。
-- **打开速度选 `2.0s (Safe / Large)`**，让浏览器和 Outlook 来得及处理。
-- **名单只保留需要的列。** 模板用不到的成绩、学号等敏感信息不要放进去。
+- **每批 40–50 封左右**（默认 50），批次之间隔几分钟。短时间内发出大量邮件，可能会被邮箱服务限流或标记。
+- **每次都先给自己发测试**，用自动发送之前尤其要测。
+- **打开速度选 `2 秒（稳妥 / 大批量）`**，让浏览器和 Outlook 来得及处理。
+- **只载入邮件需要的列**，Excel 选列时其他列默认不载入。
+- **看一眼收件人检查**：昵称、私人邮箱、缺失的名字，都能在发出去之前发现。
 
-## CSV 格式
+## Excel 和 CSV 格式
 
-CSV 需要一行表头、至少一行数据和一列邮箱。任何表头都可以当变量用：
+名单需要一行表头、至少一行数据和一列邮箱（列名可以是 `Email`、`E-mail`、`Mail`、`邮箱`、`Correo`、`To`，或包含 "email" 的列名）。任何表头都可以当变量用：
 
 ```csv
 FirstName,LastName,Email,Course,CcEmail
@@ -168,26 +209,37 @@ Body:     Hi {{FirstName}},
 CC:       {{CcEmail}}
 ```
 
-- 内容里有逗号或换行时，要用英文双引号括起来。
-- 变量名区分大小写：`{{firstname}}` 对不上 `FirstName` 这一列。
-- 直接粘贴时，表头和第一行数据之间必须是真正的换行；文本框里的自动折行不算。
-- 用 Excel 准备名单时，选择 **文件 → 另存为 → CSV UTF-8**，中文和其他语言的名字才不会乱码。
+- **Excel：** 可以直接读取 `.xlsx`，第一行非空的行作为表头。单元格使用 Excel 保存时的值（公式不会重新计算；日期会显示为 Excel 的日期数字，邮件里要用日期的话请把那一列设成文本）。不支持旧版 `.xls`，请另存为 `.xlsx` 或 CSV UTF-8。
+- **CSV：** 内容里有逗号或换行时，要用英文双引号括起来。从 Excel 另存时请选 **CSV UTF-8**，中文和其他语言的名字才不会乱码。
+- 变量名区分大小写，必须和表头完全一致，包括空格：表头是 `First Name`，变量就是 `{{First Name}}`。
 
 ## 常见问题
 
 | 问题 | 解决办法 |
 |---|---|
-| 提示 "CSV needs a header row and at least one data row" | 确认第一行是表头，每位收件人单独一行。 |
-| 检查提示 "Unknown template variable" | 变量名和 CSV 表头没有完全一致（拼写、大小写）。 |
-| 邮件里直接出现了 `{{变量}}` | 同上，或者这一行对应的格子是空的。 |
+| 提示"不支持旧版 .xls 文件" | 在 Excel 里 **文件 → 另存为**，选 `.xlsx` 或 **CSV UTF-8**。 |
+| 提示"无法读取这个 Excel 文件" | 用 Excel 打开后重新另存为 `.xlsx`。有密码保护的文件无法读取。 |
+| 提示"CSV 需要一行表头和至少一行数据" | 确认第一行是表头，每位收件人单独一行。 |
+| 检查提示"未知的模板变量" | 变量名和表头没有完全一致（拼写、大小写、空格）。 |
+| 预览里某个名字不对 | 在收件人检查里直接改，或者改好原文件后重新载入。 |
 | Outlook 打开了，但收件人或主题是空的 | 先在同一个浏览器里登录 Outlook Web，再重新打开草稿。 |
 | 自动发送没有点发送 | 在 `chrome://extensions` 刷新扩展，检查发送按钮的语言，并参考 [自动发送](#自动发送实验功能)。 |
-| 标签页打开太快，或有几封没打开 | 速度选 `2.0s (Safe / Large)`，每次少发一些。 |
-| 想全部重来 | 点 **Clear Data**，会清除保存的名单、模板和进度。 |
+| 按钮显示"所有批次都已打开"，但我需要重发 | 点 **重置进度**，或在 **更多选项** 里打开指定范围。 |
+| 想全部重来 | 点 **清除数据**，会清除保存的名单、模板和进度。 |
+
+## 帮助和反馈
+
+遇到问题、有疑问或建议，请到 [GitHub Issues](https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension/issues) 提问或反馈。弹窗里也有入口：每条错误提示下面，以及弹窗最底部。
+
+![错误提示下的帮助链接](docs/images/zh/10-help-error.png)
+
+![弹窗底部的帮助链接](docs/images/zh/10-help-footer.png)
+
+反馈问题时，请写上扩展版本（语言菜单旁边的版本号）、浏览器、用的是 Outlook 还是 Gmail，以及看到的提示原文。**请不要贴真实的收件人名单或学生信息**，用虚构的名字和 `example.com` 邮箱代替。
 
 ## 隐私和权限
 
-Mail Merge Draft Helper 没有服务器，不会把你的数据发到任何地方。CSV、模板、生成的草稿和进度保存在浏览器的扩展存储里，这样关掉弹窗再打开也不会丢。点 **Clear Data** 可以清除。导出的方案文件只会保存在浏览器的下载位置。
+Mail Merge Draft Helper 没有服务器，不会把你的数据发到任何地方。Excel 和 CSV 文件都在弹窗里读取。载入的名单、模板、生成的草稿和进度保存在浏览器的扩展存储里，这样关掉弹窗再打开也不会丢。点 **清除数据** 可以清除。导出的方案文件只会保存在浏览器的下载位置。
 
 需要的权限：
 
@@ -217,7 +269,9 @@ node --test
 ./scripts/build_release.sh
 ```
 
-`build_release.sh` 会把扩展文件复制到 `dist/mail-merge-draft-helper/`，并按 `manifest.json` 里的版本号生成 `dist/mail-merge-draft-helper-<版本号>.zip`。
+- `popup.html` / `popup.js` / `popup.css`：弹窗。`xlsx.js` 负责读取 Excel；`content.js` 是自动发送脚本。
+- `i18n.js` 存放弹窗里所有的中英西三语文字。新增文字时三种语言都要加；有测试会检查三种语言的键和 `{占位符}` 是否一致。
+- `build_release.sh` 会把扩展文件复制到 `dist/mail-merge-draft-helper/`，并按 `manifest.json` 里的版本号生成 `dist/mail-merge-draft-helper-<版本号>.zip`。
 
 上架 Chrome 应用商店的资料（商店描述、截图、审核说明、检查清单）在 [`store-assets/`](store-assets/) 里。官方文档：
 

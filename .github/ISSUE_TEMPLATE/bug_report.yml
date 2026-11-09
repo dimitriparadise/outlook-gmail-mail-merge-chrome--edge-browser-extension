@@ -1,0 +1,68 @@
+name: "Something isn't working / 遇到问题"
+description: "Report an error or something that does not work as expected. / 报告错误或不符合预期的情况。"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! **Please do not paste real recipient lists, student data, or email addresses.** Use made-up names and `example.com` addresses instead.
+
+        感谢反馈！**请不要贴真实的收件人名单、学生信息或邮箱地址**，用虚构的名字和 `example.com` 邮箱代替。
+  - type: input
+    id: version
+    attributes:
+      label: "Extension version / 扩展版本"
+      description: "Shown next to the language menu in the popup, e.g. v0.2.0. / 在弹窗右上角语言菜单旁边，例如 v0.2.0。"
+      placeholder: "v0.2.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: browser
+    attributes:
+      label: "Browser / 浏览器"
+      options:
+        - Chrome
+        - Edge
+        - "Other / 其他"
+    validations:
+      required: true
+  - type: dropdown
+    id: service
+    attributes:
+      label: "Mail service / 邮箱服务"
+      options:
+        - "Outlook Web (work or school / 学校或工作账号)"
+        - "Outlook.com (personal / 个人账号)"
+        - Gmail
+    validations:
+      required: true
+  - type: checkboxes
+    id: autosend
+    attributes:
+      label: "Auto-Send / 自动发送"
+      options:
+        - label: "Auto-Send was turned on / 当时开启了自动发送"
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: "What happened? / 发生了什么？"
+      description: "Include the exact message shown in the popup, if any. / 如果弹窗里有提示，请贴上原文。"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Steps to reproduce / 复现步骤"
+      placeholder: |
+        1. Load the list ... / 载入名单……
+        2. Click ... / 点击……
+        3. See ... / 看到……
+  - type: textarea
+    id: expected
+    attributes:
+      label: "What did you expect? / 你预期的结果是什么？"
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: "Screenshots (optional) / 截图（可选）"
+      description: "Please blur or crop out names and email addresses. / 请先遮住名字和邮箱地址。"

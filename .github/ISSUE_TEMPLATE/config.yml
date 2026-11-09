@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "Tutorial (English)"
+    url: https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension#step-by-step-tutorial
+    about: "Step-by-step guide with screenshots."
+  - name: "中文教程"
+    url: https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension/blob/main/README.zh-CN.md
+    about: "带截图的分步说明。"

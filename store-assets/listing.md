@@ -12,12 +12,18 @@ Create personalized Gmail or Outlook drafts from CSV lists with previews and loc
 
 Mail Merge Draft Helper helps you prepare personalized email drafts from a CSV list directly in Chrome. It is designed for instructors, administrators, coordinators, and small teams who need to send many similar messages while still reviewing each email before it goes out.
 
-Upload or paste a CSV, write one reusable subject and body template, and use variables such as `{{Name}}`, `{{Course}}`, or any other CSV column. The extension generates personalized drafts, lets you preview each message, and opens the current preview or a selected range in Gmail or Outlook Web.
+Load an Excel or CSV list, write one reusable subject and body template, and use variables such as `{{Name}}`, `{{Course}}`, or any other CSV column. The extension generates personalized drafts, lets you preview each message, and opens the current preview or a selected range in Gmail or Outlook Web.
 
 Key features:
 
-- Generate personalized Gmail or Outlook Web drafts from CSV rows.
-- Use any CSV header as a template variable.
+- Load an Excel (.xlsx) or CSV list and choose which columns to use; everything else is left out.
+- Generate personalized Gmail or Outlook Web drafts from each row.
+- Use any column header as a template variable.
+- Review notes flag names that may not match the email address, unusual email domains, and empty fields, with inline fixes.
+- Send yourself a test copy before mailing the list.
+- Send in batches (50 per batch by default) with remembered progress.
+- Save or load the whole setup as an email plan file.
+- Interface in English, Chinese, and Spanish.
 - Preview every generated email before opening it.
 - Open the current preview draft or a selected range of drafts.
 - Add optional CC and BCC fields, including values from CSV columns.
@@ -47,7 +53,7 @@ English
 
 ## Support / Website
 
-Add your support URL here before publishing.
+https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension/issues
 
 ## Suggested Keywords
 

@@ -14,66 +14,77 @@
           <h1>Mail Merge Helper</h1>
         </div>
       </div>
-      <span class="version-badge">v0.1.2</span>
+      <div class="header-actions">
+        <select id="uiLanguage" class="language-select" aria-label="Language" data-i18n-title="languageLabel">
+          <option value="en">English</option>
+          <option value="zh">中文</option>
+          <option value="es">Español</option>
+        </select>
+        <span class="version-badge">v0.2.0</span>
+      </div>
     </header>
 
     <!-- Plan Import / Export -->
     <section class="plan-bar">
-      <span class="plan-bar-label"><span class="card-title-icon">📦</span>Email Plan</span>
+      <span class="plan-bar-label"><span class="card-title-icon">📦</span><span data-i18n="planBarLabel">Email Plan</span></span>
       <div class="plan-bar-actions">
-        <button type="button" id="importPlanBtn" class="plan-btn">Import Plan</button>
-        <button type="button" id="exportPlanBtn" class="plan-btn">Export Plan</button>
+        <button type="button" id="importPlanBtn" class="plan-btn" data-i18n="importPlan">Import Plan</button>
+        <button type="button" id="exportPlanBtn" class="plan-btn" data-i18n="exportPlan">Export Plan</button>
       </div>
       <input id="planFile" type="file" accept=".json,application/json" class="hidden" />
     </section>
 
-    <!-- Card 1: Data Source -->
+    <!-- Card 1: Recipients -->
     <section class="card">
       <div class="card-title">
-        <span><span class="card-title-icon">📊</span>1. Recipient CSV Data</span>
+        <span><span class="card-title-icon">📊</span><span data-i18n="cardRecipients">1. Recipients</span></span>
         <div id="csvSummary" class="csv-summary hidden"></div>
       </div>
-      
+
       <div id="dropZone" class="drop-zone">
-        <input id="csvFile" type="file" accept=".csv,text/csv" />
+        <input id="csvFile" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
         <div class="drop-zone-icon">📄</div>
         <div class="drop-zone-text">
-          <span class="drop-zone-highlight">Click to browse</span> or drag & drop CSV file (or a plan .json)
+          <span class="drop-zone-highlight" data-i18n="dropBrowse">Click to browse</span>
+          <span data-i18n="dropRest">or drag & drop an Excel (.xlsx) or CSV file, or a plan .json</span>
         </div>
       </div>
 
+      <!-- Column picker shown after opening an Excel file -->
+      <div id="mappingPanel" class="mapping-panel hidden"></div>
+
       <div style="margin-top: 8px;">
-        <button type="button" id="togglePasteCsvBtn" class="text-toggle-btn">Or paste / view raw CSV text</button>
+        <button type="button" id="togglePasteCsvBtn" class="text-toggle-btn" data-i18n="togglePasteCsv">Or paste / view raw CSV text</button>
       </div>
 
       <div id="pasteCsvContainer" class="hidden" style="margin-top: 6px;">
-        <textarea id="csvText" placeholder="Name,Email,Course,Section,DueDate&#10;John,john@example.com,ISOM 210,A,Friday"></textarea>
-        <p class="hint">Ensure there is a real line break between the header row and student data rows.</p>
+        <textarea id="csvText" placeholder="Name,Email,Course&#10;John,john@example.com,ISOM 210"></textarea>
+        <p class="hint" data-i18n="csvLineBreakHint">Put the header row on the first line and each recipient on its own line.</p>
       </div>
     </section>
 
     <!-- Card 2: Email Template -->
     <section class="card">
       <div class="card-title">
-        <span><span class="card-title-icon">✍️</span>2. Email Template</span>
+        <span><span class="card-title-icon">✍️</span><span data-i18n="cardTemplate">2. Email Template</span></span>
       </div>
 
       <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-        <label for="templatePreset" style="margin: 0; white-space: nowrap;">Preset:</label>
+        <label for="templatePreset" style="margin: 0; white-space: nowrap;" data-i18n="presetLabel">Preset:</label>
         <select id="templatePreset">
-          <option value="">Custom</option>
-          <option value="courseReminder">Course reminder</option>
-          <option value="blank">Blank</option>
+          <option value="" data-i18n="presetCustom">Custom</option>
+          <option value="courseReminder" data-i18n="presetCourseReminder">Course reminder</option>
+          <option value="blank" data-i18n="presetBlank">Blank</option>
         </select>
       </div>
 
       <!-- Variable Insertion Chips -->
       <div class="variable-panel">
-        <div class="variable-panel-header">Click to insert variable</div>
-        <div id="variableButtons" class="variable-buttons"></div>
+        <div class="variable-panel-header" data-i18n="variablePanelHeader">Click to insert variable</div>
+        <div id="variableButtons" class="variable-buttons" data-i18n-empty="variablesEmpty" data-empty="Load a recipient list to see its columns here."></div>
       </div>
 
-      <label for="subject">Subject</label>
+      <label for="subject" data-i18n="subjectLabel">Subject</label>
       <input id="subject" type="text" value="Reminder for {{Course}}" />
 
       <div>
@@ -82,24 +93,24 @@
 
       <div id="ccBccContainer" class="hidden">
         <label for="cc">CC</label>
-        <input id="cc" type="text" placeholder="Optional: email@example.com or {{CcEmail}}" />
+        <input id="cc" type="text" data-i18n-placeholder="ccPlaceholder" placeholder="Optional: email@example.com or {{CcEmail}}" />
 
         <label for="bcc">BCC</label>
-        <input id="bcc" type="text" placeholder="Optional: email@example.com or {{BccEmail}}" />
+        <input id="bcc" type="text" data-i18n-placeholder="bccPlaceholder" placeholder="Optional: email@example.com or {{BccEmail}}" />
         <p id="copyRecipientHint" class="hint"></p>
       </div>
 
-      <label for="body">Body</label>
+      <label for="body" data-i18n="bodyLabel">Body</label>
       <textarea id="body">Hi {{Name}},&#10;&#10;This is a quick reminder about {{Course}}.</textarea>
     </section>
 
     <!-- Card 3: Settings -->
     <section class="card">
       <div class="card-title">
-        <span><span class="card-title-icon">⚙️</span>3. Compose Settings</span>
+        <span><span class="card-title-icon">⚙️</span><span data-i18n="cardSettings">3. Compose Settings</span></span>
       </div>
 
-      <label>Service Mode</label>
+      <label data-i18n="serviceModeLabel">Service Mode</label>
       <div class="segmented-control">
         <button type="button" class="segmented-btn active" data-mode="outlook">
           <span>Outlook Web</span>
@@ -118,65 +129,99 @@
       <div class="setting-callout">
         <label class="checkbox-label">
           <input type="checkbox" id="autoSend" />
-          <span>Auto-Send Drafts</span>
-          <span class="callout-badge">Experimental</span>
+          <span data-i18n="autoSendLabel">Auto-Send Drafts</span>
+          <span class="callout-badge" data-i18n="experimentalBadge">Experimental</span>
         </label>
-        <p class="hint" style="margin-top: 4px; color: var(--warning-text);">
+        <p class="hint" style="margin-top: 4px; color: var(--warning-text);" data-i18n="autoSendHint">
           Clicks "Send" on opened compose tabs automatically. Keep unchecked to review each draft manually.
         </p>
       </div>
 
       <div class="row-settings">
-        <label for="batchDelay">Batch Opening Speed:</label>
+        <label for="batchDelay" data-i18n="batchDelayLabel">Batch Opening Speed:</label>
         <select id="batchDelay">
-          <option value="500">0.5s (Fast)</option>
-          <option value="1000" selected>1.0s (Normal)</option>
-          <option value="2000">2.0s (Safe / Large)</option>
+          <option value="500" data-i18n="speedFast">0.5s (Fast)</option>
+          <option value="1000" selected data-i18n="speedNormal">1.0s (Normal)</option>
+          <option value="2000" data-i18n="speedSafe">2.0s (Safe / Large)</option>
         </select>
+      </div>
+
+      <div class="row-settings">
+        <label for="batchSize" data-i18n="batchSizeLabel">Emails per batch:</label>
+        <input id="batchSize" type="number" min="1" max="500" value="50" />
       </div>
     </section>
 
     <!-- Action Buttons -->
     <div class="row">
-      <button id="loadBtn" type="button">Generate Drafts</button>
-      <button id="clearStateBtn" type="button">Clear Data</button>
+      <button id="loadBtn" type="button" data-i18n="generate">Generate Drafts</button>
+      <button id="clearStateBtn" type="button" data-i18n="clearData">Clear Data</button>
     </div>
 
     <!-- Status & Progress -->
     <section id="status"></section>
+    <a id="statusHelp" class="status-help hidden" href="https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension/issues" target="_blank" rel="noopener" data-i18n="statusHelp">Still stuck? Report it on GitHub</a>
     <div id="progressContainer" class="progress-container hidden">
       <div id="progressBar" class="progress-bar"></div>
     </div>
 
+    <!-- Recipient review notes (do not block sending) -->
+    <section id="reviewPanel" class="review-panel hidden"></section>
+
     <!-- Preview Controls & Card -->
     <div class="hidden preview-controls" id="previewControls">
-      <button id="previewPrevBtn" type="button">◀ Previous</button>
+      <button id="previewPrevBtn" type="button" data-i18n="previous">◀ Previous</button>
       <span id="previewCounter"></span>
-      <button id="previewNextBtn" type="button">Next ▶</button>
+      <button id="previewNextBtn" type="button" data-i18n="next">Next ▶</button>
     </div>
 
     <section id="preview"></section>
 
-    <!-- Batch Send Controls -->
+    <!-- Send Controls -->
     <section class="hidden" id="sendControls">
-      <button id="openNextBtn" type="button">Open Preview Draft</button>
-      <div class="range-controls">
-        <label>
-          From
-          <input id="rangeStart" type="number" min="1" />
-        </label>
-        <label>
-          To
-          <input id="rangeEnd" type="number" min="1" />
-        </label>
-        <button id="openRangeBtn" type="button">Open Selected Drafts</button>
+      <div class="send-box">
+        <label for="testEmail" class="send-box-title" data-i18n="testEmailLabel">Send yourself a test first</label>
+        <div class="inline-row">
+          <input id="testEmail" type="email" data-i18n-placeholder="testEmailPlaceholder" placeholder="your.email@example.com" />
+          <button id="sendTestBtn" type="button">Open Test Draft to Me</button>
+        </div>
+        <p class="hint" data-i18n="testEmailHint">Uses the draft shown in the preview, addressed to you with "[TEST]" in the subject. Your list and progress do not change.</p>
       </div>
+
+      <div class="send-box">
+        <div class="batch-header">
+          <span class="send-box-title" data-i18n="batchTitle">Send in batches</span>
+          <span id="batchProgress" class="batch-progress"></span>
+        </div>
+        <button id="openBatchBtn" type="button">Open Next Batch</button>
+        <p id="lastBatchNote" class="hint"></p>
+        <button id="resetProgressBtn" type="button" class="text-toggle-btn" data-i18n="resetProgress">Reset progress</button>
+      </div>
+
+      <details class="more-options">
+        <summary data-i18n="moreOptions">More options: open one draft or a custom range</summary>
+        <button id="openNextBtn" type="button">Open Preview Draft</button>
+        <div class="range-controls">
+          <label>
+            <span data-i18n="rangeFrom">From</span>
+            <input id="rangeStart" type="number" min="1" />
+          </label>
+          <label>
+            <span data-i18n="rangeTo">To</span>
+            <input id="rangeEnd" type="number" min="1" />
+          </label>
+          <button id="openRangeBtn" type="button">Open Selected Drafts</button>
+        </div>
+      </details>
     </section>
 
     <div class="footer-note">
-      🔒 100% Local Execution: CSV data never leaves your browser.
+      <div data-i18n="footerNote">🔒 100% local: your data never leaves your browser.</div>
+      <a id="helpLink" href="https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension/issues" target="_blank" rel="noopener" data-i18n="helpLink">Questions or problems? Ask on GitHub</a>
     </div>
   </main>
+  <script src="i18n.js"></script>
+  <script src="xlsx.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -1,24 +1,25 @@
 # Privacy Policy
 
-Effective date: July 5, 2026
+Effective date: November 8, 2026
 
-Mail Merge Draft Helper is designed to create personalized Gmail or Outlook Web email drafts from CSV data in the user's browser.
+Mail Merge Draft Helper is designed to create personalized Gmail or Outlook Web email drafts from Excel or CSV data in the user's browser.
 
 ## Data Collection
 
 Mail Merge Draft Helper does not collect, sell, transmit, or share user data with a third-party server.
 
-The extension processes CSV text, email templates, generated draft content, and progress locally in the browser.
+The extension processes recipient lists, email templates, generated draft content, and progress locally in the browser. Excel (.xlsx) and CSV files are read inside the extension popup. When importing an Excel file, only the columns the user selects are kept.
 
 ## Local Storage
 
 The extension uses Chrome extension storage to save:
 
-- CSV text pasted or loaded by the user
+- The recipient list (as CSV text) pasted or loaded by the user, including any corrections made in the popup
 - Subject, body, CC, and BCC templates
 - Generated draft preview data
-- Draft-opening progress
-- User-selected compose mode and Auto-Send setting
+- Draft-opening progress and batch settings
+- The test email address the user enters for sending themselves a test
+- User-selected interface language, compose mode, and Auto-Send setting
 
 This local storage is used only to let users close and reopen the popup without losing their work.
 

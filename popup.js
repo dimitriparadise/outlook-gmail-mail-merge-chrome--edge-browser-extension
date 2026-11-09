@@ -4,10 +4,20 @@ let previewIndex = 0;
 let generated = [];
 let csvHeaders = [];
 let lastTemplateFieldId = 'body';
+// { start, end, at } for the most recently opened range, shown under the batch button.
+let lastBatch = null;
+// Keys of review notes the user marked as fine.
+let dismissedNotes = [];
+// Set when the raw CSV text is edited by hand, so the next Generate starts progress over.
+let listEdited = false;
+// Column picker state while an Excel file is being imported.
+let mapping = null;
 
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'outlookMailMergeState';
 const DEFAULT_DELAY_MS = 1000;
+const DEFAULT_BATCH_SIZE = 50;
+const MAX_BATCH_SIZE = 500;
 const TEMPLATE_FIELD_IDS = ['subject', 'cc', 'bcc', 'body'];
 const TEMPLATE_PRESETS = {
   courseReminder: {
@@ -22,28 +32,23 @@ const TEMPLATE_PRESETS = {
 const PLAN_TYPE = 'mail-merge-plan';
 const PLAN_VERSION = 1;
 const BATCH_DELAY_OPTIONS = ['500', '1000', '2000'];
-const COMPOSE_MODE_HINTS = {
-  outlook: 'Outlook Web: Drafts open in Outlook Web compose tabs (mailto is used if CC/BCC is present).',
-  gmail: 'Gmail: Drafts open in Gmail compose tabs with full To, CC, BCC, subject, and body support.'
-};
+const EMAIL_HEADER_ALIASES = ['email', 'e-mail', 'mail', '邮箱', 'recipient', 'to', 'student email', 'student_email', 'correo', 'correo electrónico'];
+const NAME_COLUMN_PATTERN = /name|名|nombre/i;
 
-function actionLabels() {
-  const isAutoSend = $('autoSend')?.checked ?? false;
-  return {
-    current: isAutoSend ? 'Open & Send Preview Email' : 'Open Preview Draft',
-    selected: isAutoSend ? 'Open & Send Selected Emails' : 'Open Selected Drafts',
-    item: isAutoSend ? 'email' : 'draft',
-    items: isAutoSend ? 'emails' : 'drafts',
-    openedVerb: isAutoSend ? 'Queued' : 'Opened',
-    openVerb: isAutoSend ? 'open and send' : 'open',
-    openingVerb: isAutoSend ? 'opening and sending' : 'opening'
-  };
+function isAutoSendOn() {
+  return $('autoSend')?.checked ?? false;
+}
+
+// Message keys ending in "Send" hold the Auto-Send wording of the same message.
+function tm(key, vars) {
+  return t(isAutoSendOn() ? `${key}Send` : key, vars);
 }
 
 function syncDraftActionLabels() {
-  const labels = actionLabels();
-  if ($('openNextBtn')) $('openNextBtn').textContent = labels.current;
-  if ($('openRangeBtn')) $('openRangeBtn').textContent = labels.selected;
+  if ($('openNextBtn')) $('openNextBtn').textContent = tm('openPreview');
+  if ($('openRangeBtn')) $('openRangeBtn').textContent = tm('openRange');
+  if ($('sendTestBtn')) $('sendTestBtn').textContent = tm('sendTest');
+  renderBatchControls();
 }
 
 function hasOwn(object, key) {
@@ -58,12 +63,18 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+function detectEmailHeader(headers) {
+  return headers.find(h => EMAIL_HEADER_ALIASES.includes(String(h).trim().toLowerCase()))
+    || headers.find(h => /email|邮箱|mail|correo/i.test(h))
+    || null;
+}
+
 function parseCSV(text) {
   const records = [];
   let record = [];
   let cur = '';
   let inQuotes = false;
-  const source = text.replace(/^\uFEFF/, '');
+  const source = text.replace(/^﻿/, '');
 
   for (let i = 0; i < source.length; i++) {
     const ch = source[i];
@@ -88,28 +99,20 @@ function parseCSV(text) {
     }
   }
 
-  if (inQuotes) throw new Error('CSV has an unclosed quoted field.');
+  if (inQuotes) throw new Error(t('csvUnclosedQuote'));
   record.push(cur.trim());
   if (record.some(value => value !== '')) records.push(record);
 
   const lines = records;
   if (lines.length < 2) {
     const hasCommaSeparatedValues = source.split(',').length > 2;
-    if (hasCommaSeparatedValues) {
-      throw new Error('CSV needs a real line break between the header row and the first data row. Text wrapping in the box does not count; press Enter after the last header, then put John,john@example.com,... on the next line.');
-    }
-    throw new Error('CSV needs a header row and at least one data row.');
+    if (hasCommaSeparatedValues) throw new Error(t('csvNeedsLineBreak'));
+    throw new Error(t('csvNeedsRows'));
   }
 
   const headers = lines[0].map(h => h.trim());
   csvHeaders = headers;
-
-  // Smart email column detection (supports Email, E-mail, Mail, 邮箱, Recipient, To, etc.)
-  const emailAliases = ['email', 'e-mail', 'mail', '邮箱', 'recipient', 'to', 'student email', 'student_email'];
-  let emailKey = headers.find(h => emailAliases.includes(h.toLowerCase()));
-  if (!emailKey) {
-    emailKey = headers.find(h => /email|邮箱|mail/i.test(h));
-  }
+  const emailKey = detectEmailHeader(headers);
 
   return lines.slice(1).map(line => {
     const obj = {};
@@ -119,6 +122,17 @@ function parseCSV(text) {
     }
     return obj;
   }).filter(r => String(r.Email || r.email || '').trim() !== '');
+}
+
+function csvCell(value) {
+  const text = String(value ?? '');
+  return /[",\r\n]/.test(text) || text !== text.trim() ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function rowsToCSV(headers, rowList) {
+  return [headers, ...rowList.map(row => headers.map(h => row[h] ?? ''))]
+    .map(cells => cells.map(csvCell).join(','))
+    .join('\n');
 }
 
 function applyTemplate(template, row) {
@@ -159,25 +173,131 @@ function validateMessages(messages) {
   const toCounts = new Map();
 
   messages.forEach((msg, index) => {
-    const rowLabel = `Draft ${index + 1}`;
+    const row = t('draftLabel', { n: index + 1 });
     const to = String(msg.email || '').trim();
-    if (!isValidEmail(to)) issues.push(`${rowLabel}: Invalid email address: ${to || '(blank)'}`);
+    if (!isValidEmail(to)) issues.push(t('issueInvalidEmail', { row, email: to || t('blank') }));
     if (to) toCounts.set(to.toLowerCase(), (toCounts.get(to.toLowerCase()) || 0) + 1);
 
     const copyRecipients = [...splitRecipients(msg.cc), ...splitRecipients(msg.bcc)];
     copyRecipients.forEach(recipient => {
-      if (!isValidEmail(recipient)) issues.push(`${rowLabel}: Invalid email address: ${recipient}`);
+      if (!isValidEmail(recipient)) issues.push(t('issueInvalidEmail', { row, email: recipient }));
       if (recipient.toLowerCase() === to.toLowerCase()) {
-        issues.push(`${rowLabel}: ${recipient} also appears in CC/BCC.`);
+        issues.push(t('issueCopyOverlap', { row, email: recipient }));
       }
     });
   });
 
   toCounts.forEach((count, email) => {
-    if (count > 1) issues.push(`Duplicate To recipient: ${email}`);
+    if (count > 1) issues.push(t('issueDuplicate', { email }));
   });
 
   return issues;
+}
+
+// --- Recipient review notes: soft checks that never block sending ---
+
+function findFirstNameHeader(headers) {
+  return headers.find(h => /^(first[\s_-]*name|given[\s_-]*name|preferred[\s_-]*name|nombre|名|名字)$/i.test(String(h).trim()))
+    || headers.find(h => /^(name|姓名|full[\s_-]*name)$/i.test(String(h).trim()))
+    || null;
+}
+
+function emailDomain(email) {
+  const at = String(email).lastIndexOf('@');
+  return at < 0 ? '' : String(email).slice(at + 1).trim().toLowerCase();
+}
+
+function asciiLetters(text) {
+  return String(text).toLowerCase().normalize('NFD').replace(/[^a-z]/g, '');
+}
+
+function reviewRecipients(rowList, headers, templates) {
+  const used = new Set(templates.flatMap(templateVariables));
+  const emailHeader = detectEmailHeader(headers) || 'Email';
+  const nameHeader = findFirstNameHeader(headers);
+  const isGivenName = nameHeader && !/^(name|姓名|full[\s_-]*name)$/i.test(nameHeader.trim());
+  const emails = rowList.map(row => String(row.Email || row.email || '').trim());
+
+  const domainCounts = new Map();
+  emails.map(emailDomain).forEach(domain => domain && domainCounts.set(domain, (domainCounts.get(domain) || 0) + 1));
+  const [mainDomain, mainCount] = [...domainCounts.entries()].sort((a, b) => b[1] - a[1])[0] || ['', 0];
+  const checkDomains = rowList.length >= 5 && mainCount / rowList.length >= 0.8;
+
+  // A name that is not part of the address local part, e.g. "Jhoune-Lynn" for lynn.duplan@...
+  const mismatched = rowList.map((row, index) => {
+    if (!nameHeader) return false;
+    const first = asciiLetters(String(row[nameHeader] ?? '').trim().split(/\s+/)[0]);
+    const local = asciiLetters(emails[index].split('@')[0]);
+    return Boolean(first && local && !local.includes(first));
+  });
+  // If many addresses do not contain names at all (e.g. jsmith3@), the check is just noise.
+  const checkNames = mismatched.filter(Boolean).length <= Math.max(1, rowList.length * 0.3);
+
+  const notes = [];
+  rowList.forEach((row, index) => {
+    const email = emails[index];
+    const add = (type, field, message) => notes.push({
+      key: `${type}:${field}:${email.toLowerCase()}`,
+      index,
+      field,
+      email,
+      value: row[field] ?? '',
+      message
+    });
+
+    used.forEach(variable => {
+      if (headers.includes(variable) && String(row[variable] ?? '').trim() === '') add('empty', variable, t('noteEmpty', { name: variable }));
+    });
+    if (nameHeader && checkNames && mismatched[index]) {
+      add('mismatch', nameHeader, t('noteNameMismatch', { name: nameHeader }));
+    } else if (isGivenName && used.has(nameHeader) && /\s/.test(String(row[nameHeader] ?? '').trim())) {
+      add('multiword', nameHeader, t('noteMultiWord', { name: nameHeader }));
+    }
+    const domain = emailDomain(email);
+    if (checkDomains && domain && domain !== mainDomain) add('domain', emailHeader, t('noteDomain', { domain, main: mainDomain }));
+  });
+
+  return notes.filter(note => !dismissedNotes.includes(note.key));
+}
+
+function renderReviewPanel() {
+  const panel = $('reviewPanel');
+  if (!panel) return;
+  const notes = generated.length ? reviewRecipients(rows, csvHeaders, currentTemplates()) : [];
+  panel.classList.toggle('hidden', !notes.length);
+  if (!notes.length) {
+    panel.innerHTML = '';
+    return;
+  }
+
+  const shown = notes.slice(0, 30);
+  panel.innerHTML = `
+    <div class="review-title">${escapeHtml(t('reviewTitle', { count: notes.length }))}</div>
+    <p class="hint">${escapeHtml(t('reviewHint'))}</p>
+    ${shown.map(note => `
+      <div class="review-item">
+        <div class="review-meta"><span class="review-row">${escapeHtml(t('rowLabel', { n: note.index + 1 }))}</span><span class="review-email">${escapeHtml(note.email)}</span></div>
+        <div class="review-message">${escapeHtml(note.message)}</div>
+        <div class="review-edit">
+          <input type="text" value="${escapeHtml(note.value)}" data-row="${note.index}" data-field="${escapeHtml(note.field)}" aria-label="${escapeHtml(note.field)}" />
+          <button type="button" class="review-dismiss" data-dismiss="${escapeHtml(note.key)}">${escapeHtml(t('reviewDismiss'))}</button>
+        </div>
+      </div>`).join('')}
+    ${notes.length > shown.length ? `<p class="hint">${escapeHtml(t('reviewMore', { count: notes.length - shown.length }))}</p>` : ''}
+  `;
+}
+
+async function updateRecipientField(index, field, value) {
+  if (!rows[index] || !csvHeaders.includes(field)) return;
+  rows[index][field] = String(value ?? '').trim();
+  if ($('csvText')) $('csvText').value = rowsToCSV(csvHeaders, rows);
+  // Re-parse so the derived Email field follows an edited email column.
+  rows = parseCSV(getCsvText());
+  makeMessages();
+  renderPreview();
+  renderReviewPanel();
+  renderBatchControls();
+  await saveState();
 }
 
 function getCsvText() {
@@ -186,11 +306,14 @@ function getCsvText() {
 
 async function saveState() {
   const state = {
+    uiLanguage,
     csvText: $('csvText')?.value ?? '',
     composeMode: $('composeMode')?.value ?? 'outlook',
     autoSend: Boolean($('autoSend')?.checked),
     templatePreset: $('templatePreset')?.value ?? '',
     batchDelay: $('batchDelay')?.value ?? '1000',
+    batchSize: getBatchSize(),
+    testEmail: $('testEmail')?.value ?? '',
     subject: $('subject')?.value ?? '',
     cc: $('cc')?.value ?? '',
     bcc: $('bcc')?.value ?? '',
@@ -200,6 +323,9 @@ async function saveState() {
     generated,
     currentIndex,
     previewIndex,
+    lastBatch,
+    dismissedNotes,
+    listEdited,
     hasStarted: generated.length > 0,
     updatedAt: Date.now()
   };
@@ -208,26 +334,47 @@ async function saveState() {
 
 function updateCcBccVisibility(show) {
   const container = $('ccBccContainer');
+  if (!container) return;
+  container.classList.toggle('hidden', !show);
+  renderCcBccToggle();
+}
+
+function renderCcBccToggle() {
+  const container = $('ccBccContainer');
   const trigger = $('toggleCcBccBtn');
   if (!container || !trigger) return;
-  if (show) {
-    container.classList.remove('hidden');
-    trigger.textContent = '− Hide CC / BCC';
-  } else {
-    container.classList.add('hidden');
-    trigger.textContent = '+ Add CC / BCC';
-  }
+  trigger.textContent = container.classList.contains('hidden') ? t('addCcBcc') : t('hideCcBcc');
 }
 
 function updateCsvSummary() {
   const summaryEl = $('csvSummary');
   if (!summaryEl) return;
-  if (rows.length > 0) {
-    summaryEl.textContent = `✓ ${rows.length} rows loaded`;
+  // While the Excel column picker is open, the loaded count would describe the previous list.
+  if (rows.length > 0 && !mapping) {
+    summaryEl.textContent = t('rowsLoaded', { count: rows.length });
     summaryEl.classList.remove('hidden');
   } else {
     summaryEl.classList.add('hidden');
   }
+}
+
+function applyLanguageSelection(lang) {
+  setUiLanguage(lang);
+  if ($('uiLanguage')) $('uiLanguage').value = uiLanguage;
+  applyStaticTranslations();
+  renderDynamicText();
+}
+
+// Re-renders every piece of text that JavaScript writes, e.g. after the language changes.
+function renderDynamicText() {
+  syncDraftActionLabels();
+  renderComposeModeHints();
+  renderCcBccToggle();
+  updateCsvSummary();
+  renderVariableButtons();
+  renderMappingPanel();
+  renderReviewPanel();
+  if (generated.length) renderPreview();
 }
 
 async function restoreState() {
@@ -235,11 +382,14 @@ async function restoreState() {
   const state = result[STORAGE_KEY];
   if (!state) return;
 
+  if (state.uiLanguage) applyLanguageSelection(state.uiLanguage);
   if ($('csvText')) $('csvText').value = hasOwn(state, 'csvText') ? state.csvText : $('csvText').value;
   if ($('composeMode')) $('composeMode').value = state.composeMode || 'outlook';
   if ($('autoSend')) $('autoSend').checked = Boolean(state.autoSend);
   if ($('templatePreset')) $('templatePreset').value = state.templatePreset || '';
   if ($('batchDelay')) $('batchDelay').value = state.batchDelay || '1000';
+  if ($('batchSize')) $('batchSize').value = String(state.batchSize || DEFAULT_BATCH_SIZE);
+  if ($('testEmail')) $('testEmail').value = state.testEmail || '';
   if ($('subject')) $('subject').value = hasOwn(state, 'subject') ? state.subject : $('subject').value;
   if ($('cc')) $('cc').value = hasOwn(state, 'cc') ? state.cc : '';
   if ($('bcc')) $('bcc').value = hasOwn(state, 'bcc') ? state.bcc : '';
@@ -250,6 +400,9 @@ async function restoreState() {
   generated = Array.isArray(state.generated) ? state.generated : [];
   currentIndex = Number.isInteger(state.currentIndex) ? state.currentIndex : 0;
   previewIndex = Number.isInteger(state.previewIndex) ? state.previewIndex : currentIndex;
+  lastBatch = state.lastBatch || null;
+  dismissedNotes = Array.isArray(state.dismissedNotes) ? state.dismissedNotes : [];
+  listEdited = Boolean(state.listEdited);
 
   if ($('cc')?.value || $('bcc')?.value) {
     updateCcBccVisibility(true);
@@ -264,21 +417,33 @@ async function restoreState() {
     if ($('sendControls')) $('sendControls').classList.remove('hidden');
     if ($('previewControls')) $('previewControls').classList.remove('hidden');
     syncRangeInputs();
-    const labels = actionLabels();
-    renderStatus(`Restored saved progress at ${currentIndex}/${generated.length}. Use preview controls, then click “${labels.current}”.`, 'ok');
+    renderStatus(t('restored', { done: Math.min(currentIndex, generated.length), total: generated.length }), 'ok');
     renderPreview();
+    renderReviewPanel();
   }
 }
 
-async function loadRows() {
-  const file = $('csvFile')?.files?.[0];
-  let text = getCsvText();
-  if (file) {
-    text = await file.text();
-    if ($('csvText')) $('csvText').value = text;
+function resetProgress() {
+  generated = [];
+  currentIndex = 0;
+  previewIndex = 0;
+  lastBatch = null;
+  if ($('sendControls')) $('sendControls').classList.add('hidden');
+  if ($('previewControls')) $('previewControls').classList.add('hidden');
+  if ($('preview')) $('preview').innerHTML = '';
+  renderReviewPanel();
+}
+
+// Parses the CSV text box. A fresh list (new file, plan, or Excel import) starts progress over.
+async function loadRows({ fresh = false } = {}) {
+  const parsed = parseCSV(getCsvText());
+  if (!parsed.length) throw new Error(t('noRows'));
+  rows = parsed;
+  if (fresh) {
+    dismissedNotes = [];
+    listEdited = false;
+    resetProgress();
   }
-  rows = parseCSV(text);
-  if (!rows.length) throw new Error('No usable rows found. Make sure your CSV contains an Email column.');
   renderVariableButtons();
   updateCsvSummary();
   await saveState();
@@ -317,7 +482,7 @@ function outlookComposeUrl(msg) {
     ['body', msg.body]
   ].filter(([, value]) => String(value ?? '').trim() !== '');
 
-  if ($('autoSend')?.checked) params.push(['mailMergeAutoSend', 'true']);
+  if (isAutoSendOn()) params.push(['mailMergeAutoSend', 'true']);
 
   return 'https://outlook.office.com/mail/deeplink/compose'
     + '?' + params.map(([key, value]) => key + '=' + encodeForOutlook(value)).join('&');
@@ -334,7 +499,7 @@ function gmailComposeUrl(msg) {
     ['body', msg.body]
   ].filter(([, value]) => String(value ?? '').trim() !== '');
 
-  if ($('autoSend')?.checked) params.push(['mailMergeAutoSend', 'true']);
+  if (isAutoSendOn()) params.push(['mailMergeAutoSend', 'true']);
 
   return 'https://mail.google.com/mail/?'
     + params.map(([key, value]) => key + '=' + encodeForOutlook(value)).join('&');
@@ -359,10 +524,10 @@ function hasCopyRecipients(msg) {
 function composeUrl(msg) {
   if ($('composeMode')?.value === 'gmail') return gmailComposeUrl(msg);
 
-  if ($('autoSend')?.checked && hasCopyRecipients(msg)) {
-    throw new Error('Auto-Send with Outlook Mode cannot be used with CC or BCC. Use Gmail Mode or turn off Auto-Send.');
+  if (isAutoSendOn() && hasCopyRecipients(msg)) {
+    throw new Error(t('autoSendCcBlocked'));
   }
-  if ($('autoSend')?.checked) return outlookComposeUrl(msg);
+  if (isAutoSendOn()) return outlookComposeUrl(msg);
   return hasCopyRecipients(msg) ? mailtoUrl(msg) : outlookComposeUrl(msg);
 }
 
@@ -370,16 +535,14 @@ function renderStatus(text, cls = '') {
   if (!$('status')) return;
   $('status').className = cls;
   $('status').textContent = text;
+  // Errors get a pointer to the GitHub issues page.
+  if ($('statusHelp')) $('statusHelp').classList.toggle('hidden', cls !== 'error');
 }
 
 function renderComposeModeHints() {
   const mode = $('composeMode')?.value ?? 'outlook';
-  if ($('composeModeHint')) $('composeModeHint').textContent = COMPOSE_MODE_HINTS[mode] || '';
-  if ($('copyRecipientHint')) {
-    $('copyRecipientHint').innerHTML = mode === 'outlook'
-      ? 'In Outlook Mode, CC/BCC drafts use your browser&apos;s <code>mailto:</code> handler.'
-      : 'In Gmail Mode, CC/BCC are included in the Gmail compose URL.';
-  }
+  if ($('composeModeHint')) $('composeModeHint').textContent = mode === 'gmail' ? t('composeHintGmail') : t('composeHintOutlook');
+  if ($('copyRecipientHint')) $('copyRecipientHint').textContent = mode === 'gmail' ? t('copyHintGmail') : t('copyHintOutlook');
 
   // Sync visual segmented buttons if present in DOM
   if (typeof document !== 'undefined' && document.querySelectorAll) {
@@ -403,6 +566,7 @@ function syncRangeInputs() {
     $('rangeEnd').max = total || 1;
     $('rangeEnd').value = total || 1;
   }
+  renderBatchControls();
 }
 
 function syncPreviewControls() {
@@ -416,8 +580,8 @@ function syncPreviewControls() {
 
 function renderPreflightIssues(issues) {
   if (!issues.length) return '';
-  return '\n\nPreflight warnings:\n- ' + issues.slice(0, 8).join('\n- ')
-    + (issues.length > 8 ? `\n- ...and ${issues.length - 8} more.` : '');
+  return `\n\n${t('preflightHeader')}\n- ` + issues.slice(0, 8).join('\n- ')
+    + (issues.length > 8 ? `\n- ${t('preflightMore', { count: issues.length - 8 })}` : '');
 }
 
 function clampPreviewIndex(index) {
@@ -455,7 +619,7 @@ function renderVariableButtons() {
     button.type = 'button';
     button.className = 'variable-button';
     button.textContent = `+ {{${header}}}`;
-    button.title = `Insert {{${header}}}`;
+    button.title = t('insertVariable', { name: header });
     button.addEventListener('click', () => {
       insertAtCursor($(lastTemplateFieldId), `{{${header}}}`);
     });
@@ -477,10 +641,10 @@ function renderPreview(title) {
   $('preview').innerHTML = `
     ${titleHtml}
     <div class="preview-mail-header">
-      <div class="preview-field"><span class="preview-field-label">To:</span><span class="preview-field-val preview-tag">${escapeHtml(msg.email)}</span></div>
+      <div class="preview-field"><span class="preview-field-label">${escapeHtml(t('previewTo'))}</span><span class="preview-field-val preview-tag">${escapeHtml(msg.email)}</span></div>
       ${ccHtml}
       ${bccHtml}
-      <div class="preview-field" style="margin-top:6px;"><span class="preview-field-label">Subject:</span><span class="preview-field-val" style="font-weight:600;">${escapeHtml(msg.subject)}</span></div>
+      <div class="preview-field" style="margin-top:6px;"><span class="preview-field-label">${escapeHtml(t('previewSubject'))}</span><span class="preview-field-val" style="font-weight:600;">${escapeHtml(msg.subject)}</span></div>
     </div>
     <div class="preview-mail-body">${escapeHtml(msg.body)}</div>
   `;
@@ -501,23 +665,33 @@ function sleep(ms) {
 }
 
 function setRangeOpening(isOpening) {
-  const labels = actionLabels();
-  if ($('openRangeBtn')) {
-    $('openRangeBtn').disabled = isOpening;
-    $('openRangeBtn').textContent = isOpening ? 'Opening...' : labels.selected;
+  for (const id of ['openRangeBtn', 'openBatchBtn', 'openNextBtn', 'sendTestBtn']) {
+    if ($(id)) $(id).disabled = isOpening;
   }
-  if ($('openNextBtn')) $('openNextBtn').disabled = isOpening;
+  if (isOpening && $('openRangeBtn')) $('openRangeBtn').textContent = t('openingButton');
+  if (!isOpening) syncDraftActionLabels();
 }
 
 function runPreflight() {
-  const issues = [
-    ...findMissingTemplateVariables(csvHeaders, currentTemplates()),
+  return [
+    ...findMissingTemplateVariables(csvHeaders, currentTemplates()).map(name => t('unknownVariable', { name })),
     ...validateMessages(generated)
   ];
+}
 
-  return issues.map(issue => issue.includes('Invalid') || issue.includes('Duplicate') || issue.includes('appears')
-    ? issue
-    : `Unknown template variable: {{${issue}}}`);
+// Rebuilds the messages from the current template and reports blocking problems, if any.
+function readyToOpen() {
+  if (!generated.length) {
+    renderStatus(t('generateFirst'), 'error');
+    return false;
+  }
+  makeMessages();
+  const issues = runPreflight();
+  if (issues.length) {
+    renderStatus(tm('fixPreflight') + renderPreflightIssues(issues), 'error');
+    return false;
+  }
+  return true;
 }
 
 function getSelectedRange() {
@@ -526,23 +700,276 @@ function getSelectedRange() {
   const end = Number.parseInt($('rangeEnd')?.value, 10);
 
   if (!Number.isInteger(start) || !Number.isInteger(end)) {
-    throw new Error('Please enter a valid From and To range.');
+    throw new Error(t('rangeInvalid'));
   }
   if (start < 1 || end < 1 || start > total || end > total) {
-    throw new Error(`Range must be between 1 and ${total}.`);
+    throw new Error(t('rangeBounds', { total }));
   }
   if (start > end) {
-    throw new Error('From must be less than or equal to To.');
+    throw new Error(t('rangeOrder'));
   }
 
   return { startIndex: start - 1, endIndex: end - 1 };
 }
 
+// --- Batches ---
+
+function getBatchSize() {
+  const size = Number.parseInt($('batchSize')?.value, 10);
+  return Number.isInteger(size) && size >= 1 ? Math.min(size, MAX_BATCH_SIZE) : DEFAULT_BATCH_SIZE;
+}
+
+function nextBatchRange(done, total, size) {
+  if (done >= total) return null;
+  return { startIndex: done, endIndex: Math.min(done + size, total) - 1 };
+}
+
+function formatTime(timestamp) {
+  return new Date(timestamp).toLocaleTimeString(uiLocale(), { hour: 'numeric', minute: '2-digit' });
+}
+
+function renderBatchControls() {
+  const total = generated.length;
+  const size = getBatchSize();
+  const done = Math.min(currentIndex, total);
+  const next = nextBatchRange(done, total, size);
+
+  if ($('batchProgress')) $('batchProgress').textContent = total ? t('batchProgress', { done, total }) : '';
+  if ($('openBatchBtn')) {
+    $('openBatchBtn').disabled = !next;
+    $('openBatchBtn').textContent = next
+      ? tm('openBatch', {
+        n: Math.floor(next.startIndex / size) + 1,
+        count: Math.max(1, Math.ceil(total / size)),
+        start: next.startIndex + 1,
+        end: next.endIndex + 1
+      })
+      : t('allBatchesDone');
+  }
+  if ($('lastBatchNote')) {
+    $('lastBatchNote').textContent = lastBatch ? t('lastBatchNote', { start: lastBatch.start, end: lastBatch.end, time: formatTime(lastBatch.at) }) : '';
+  }
+  if ($('resetProgressBtn')) $('resetProgressBtn').classList.toggle('hidden', done === 0);
+}
+
+async function openDraftRange(startIndex, endIndex) {
+  const selected = generated.slice(startIndex, endIndex + 1);
+  const previousIndex = currentIndex;
+  currentIndex = Math.max(currentIndex, endIndex + 1);
+  await saveState();
+
+  const delayMs = Number.parseInt($('batchDelay')?.value || `${DEFAULT_DELAY_MS}`, 10) || DEFAULT_DELAY_MS;
+  let openedCount = 0;
+  setRangeOpening(true);
+
+  const progressContainer = $('progressContainer');
+  const progressBar = $('progressBar');
+  if (progressContainer) progressContainer.classList.remove('hidden');
+  if (progressBar) progressBar.style.width = '0%';
+
+  try {
+    for (const [index, msg] of selected.entries()) {
+      renderStatus(tm('openingProgress', { n: index + 1, total: selected.length }), 'ok');
+      await openDraftTab(msg);
+      openedCount += 1;
+
+      if (progressBar) {
+        const percent = Math.round((openedCount / selected.length) * 100);
+        progressBar.style.width = `${percent}%`;
+      }
+
+      if (openedCount < selected.length) {
+        await sleep(delayMs);
+      }
+    }
+    lastBatch = { start: startIndex + 1, end: endIndex + 1, at: Date.now() };
+    previewIndex = clampPreviewIndex(currentIndex);
+    await saveState();
+    syncRangeInputs();
+    renderPreview();
+    renderStatus(tm('rangeDone', { count: selected.length, start: startIndex + 1, end: endIndex + 1, total: generated.length }), 'ok');
+  } catch (e) {
+    currentIndex = Math.max(previousIndex, startIndex + openedCount);
+    await saveState();
+    syncRangeInputs();
+    renderStatus(tm('rangeStopped', { opened: openedCount, count: selected.length, error: e.message }), 'error');
+  } finally {
+    setRangeOpening(false);
+    setTimeout(() => {
+      if (progressContainer) progressContainer.classList.add('hidden');
+    }, 1500);
+  }
+}
+
+// --- Test email to yourself ---
+
+function buildTestMessage(msg, testEmail) {
+  return { ...msg, email: testEmail, cc: '', bcc: '', subject: `[TEST] ${msg.subject}` };
+}
+
+// --- Excel import with a column picker ---
+
+function uniqueHeaders(headerRow, width) {
+  const seen = new Map();
+  return Array.from({ length: width }, (_, i) => {
+    const base = String(headerRow[i] ?? '').trim() || t('columnFallback', { n: i + 1 });
+    const count = (seen.get(base) || 0) + 1;
+    seen.set(base, count);
+    return count > 1 ? `${base} (${count})` : base;
+  });
+}
+
+function sheetTable(sheet) {
+  const nonEmpty = sheet.rows.filter(row => row.some(cell => String(cell).trim() !== ''));
+  const width = Math.max(0, ...nonEmpty.map(row => row.length));
+  return { headers: uniqueHeaders(nonEmpty[0] || [], width), dataRows: nonEmpty.slice(1) };
+}
+
+function guessEmailColumn(headers, dataRows) {
+  const byName = detectEmailHeader(headers);
+  if (byName) return headers.indexOf(byName);
+  // Otherwise pick the column where most values look like email addresses.
+  let best = -1;
+  let bestCount = 0;
+  headers.forEach((_, col) => {
+    const count = dataRows.filter(row => isValidEmail(String(row[col] ?? '').trim())).length;
+    if (count > bestCount) {
+      best = col;
+      bestCount = count;
+    }
+  });
+  return best;
+}
+
+function mappingToCSV(headers, dataRows, emailColumn, columns) {
+  const order = [...columns]
+    .filter(col => col !== emailColumn && headers[col].toLowerCase() !== 'email')
+    .sort((a, b) => a - b);
+  const outRows = dataRows
+    .map(row => [...order.map(col => row[col] ?? ''), row[emailColumn] ?? ''])
+    .filter(cells => String(cells[cells.length - 1]).trim() !== '');
+  return [[...order.map(col => headers[col]), 'Email'], ...outRows]
+    .map(cells => cells.map(csvCell).join(','))
+    .join('\n');
+}
+
+function mappingTable() {
+  return sheetTable(mapping.sheets[mapping.sheetIndex]);
+}
+
+function resetMappingColumns() {
+  const { headers, dataRows } = mappingTable();
+  mapping.emailColumn = guessEmailColumn(headers, dataRows);
+  // Start with name columns only; anything else is opt-in.
+  mapping.columns = new Set(headers.map((_, i) => i).filter(i => i !== mapping.emailColumn && NAME_COLUMN_PATTERN.test(headers[i])));
+}
+
+function openMapping(fileName, sheets) {
+  const sheetIndex = sheets.reduce((best, sheet, i) => (sheet.rows.length > sheets[best].rows.length ? i : best), 0);
+  mapping = { fileName, sheets, sheetIndex, emailColumn: -1, columns: new Set() };
+  resetMappingColumns();
+  renderMappingPanel();
+}
+
+function renderMappingPanel() {
+  const panel = $('mappingPanel');
+  if (!panel) return;
+  updateCsvSummary();
+  if (!mapping) {
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+    return;
+  }
+
+  const { headers, dataRows } = mappingTable();
+  const sample = col => String(dataRows.find(row => String(row[col] ?? '').trim() !== '')?.[col] ?? '').replace(/\s+/g, ' ').slice(0, 40);
+  const withEmail = mapping.emailColumn >= 0 ? dataRows.filter(row => String(row[mapping.emailColumn] ?? '').trim() !== '').length : 0;
+  const sheetPicker = mapping.sheets.length > 1
+    ? `<label>${escapeHtml(t('mappingSheet'))}</label>
+       <select data-mapping="sheet">${mapping.sheets.map((sheet, i) => `<option value="${i}"${i === mapping.sheetIndex ? ' selected' : ''}>${escapeHtml(sheet.name)}</option>`).join('')}</select>`
+    : '';
+
+  panel.classList.remove('hidden');
+  panel.innerHTML = `
+    <div class="mapping-title">${escapeHtml(t('mappingTitle', { name: mapping.fileName }))}</div>
+    ${sheetPicker}
+    <label>${escapeHtml(t('mappingEmail'))}</label>
+    <select data-mapping="email">
+      ${mapping.emailColumn < 0 ? '<option value="-1" selected>—</option>' : ''}
+      ${headers.map((header, i) => `<option value="${i}"${i === mapping.emailColumn ? ' selected' : ''}>${escapeHtml(header)}</option>`).join('')}
+    </select>
+    <label>${escapeHtml(t('mappingColumns'))}</label>
+    <p class="hint">${escapeHtml(t('mappingColumnsHint'))}</p>
+    <div class="mapping-columns">
+      ${headers.map((header, i) => (i === mapping.emailColumn ? '' : `
+        <label class="mapping-column">
+          <input type="checkbox" data-mapping="column" value="${i}"${mapping.columns.has(i) ? ' checked' : ''} />
+          <span class="mapping-column-name">${escapeHtml(header)}</span>
+          <span class="mapping-sample">${escapeHtml(sample(i))}</span>
+        </label>`)).join('')}
+    </div>
+    <p class="hint">${escapeHtml(t('mappingCount', { count: withEmail, total: dataRows.length }))}</p>
+    <div class="mapping-actions">
+      <button type="button" class="mapping-apply" data-mapping="apply">${escapeHtml(t('mappingApply'))}</button>
+      <button type="button" class="mapping-cancel" data-mapping="cancel">${escapeHtml(t('mappingCancel'))}</button>
+    </div>
+  `;
+}
+
+async function applyMapping() {
+  if (!mapping) return;
+  if (mapping.emailColumn < 0) return renderStatus(t('mappingNoEmail'), 'error');
+  const { headers, dataRows } = mappingTable();
+  const fileName = mapping.fileName;
+  try {
+    if ($('csvText')) $('csvText').value = mappingToCSV(headers, dataRows, mapping.emailColumn, mapping.columns);
+    await loadRows({ fresh: true });
+    mapping = null;
+    renderMappingPanel();
+    renderStatus(t('xlsxLoaded', { name: fileName, count: rows.length }), 'ok');
+  } catch (err) {
+    renderStatus(err.message, 'error');
+  }
+}
+
+async function handleRecipientFile(file) {
+  if (!file) return;
+  try {
+    if (/\.json$/i.test(file.name)) {
+      await importPlanFile(file);
+    } else if (/\.xlsx$/i.test(file.name)) {
+      let sheets;
+      try {
+        sheets = (await readXlsx(await file.arrayBuffer())).filter(sheet => sheet.rows.some(row => row.some(cell => String(cell).trim() !== '')));
+      } catch {
+        throw new Error(t('xlsxInvalid'));
+      }
+      if (!sheets.length) throw new Error(t('xlsxEmpty'));
+      openMapping(file.name, sheets);
+      renderStatus(t('xlsxPickColumns', { name: file.name }), 'ok');
+    } else if (/\.xls$/i.test(file.name)) {
+      throw new Error(t('xlsOldFormat'));
+    } else {
+      if ($('csvText')) $('csvText').value = await file.text();
+      mapping = null;
+      renderMappingPanel();
+      await loadRows({ fresh: true });
+      renderStatus(t('csvLoaded', { name: file.name, count: rows.length }), 'ok');
+    }
+  } catch (err) {
+    renderStatus(err.message, 'error');
+  } finally {
+    // Allow choosing the same file again.
+    if ($('csvFile')) $('csvFile').value = '';
+  }
+}
+
+// --- Email plans ---
 // Plan files bundle the recipient CSV, templates, and compose settings.
 // Auto-Send is never stored in a plan and is always turned off on import.
 function buildPlan() {
   const csv = getCsvText();
-  if (!csv) throw new Error('Load a recipient CSV before exporting a plan.');
+  if (!csv) throw new Error(t('planExportNoCsv'));
   return {
     type: PLAN_TYPE,
     version: PLAN_VERSION,
@@ -554,7 +981,8 @@ function buildPlan() {
     body: $('body')?.value ?? '',
     settings: {
       composeMode: $('composeMode')?.value ?? 'outlook',
-      batchDelay: Number.parseInt($('batchDelay')?.value || `${DEFAULT_DELAY_MS}`, 10) || DEFAULT_DELAY_MS
+      batchDelay: Number.parseInt($('batchDelay')?.value || `${DEFAULT_DELAY_MS}`, 10) || DEFAULT_DELAY_MS,
+      batchSize: getBatchSize()
     }
   };
 }
@@ -564,27 +992,28 @@ function parsePlan(text) {
   try {
     plan = JSON.parse(String(text ?? '').replace(/^﻿/, ''));
   } catch {
-    throw new Error('This plan file is not valid JSON.');
+    throw new Error(t('planInvalidJson'));
   }
   if (!plan || typeof plan !== 'object' || plan.type !== PLAN_TYPE) {
-    throw new Error('This file is not a Mail Merge plan.');
+    throw new Error(t('planWrongType'));
   }
   if (plan.version !== PLAN_VERSION) {
-    throw new Error(`Unsupported plan version: ${plan.version}.`);
+    throw new Error(t('planVersion', { version: plan.version }));
   }
 
   // Text fields may also be written as an array of lines, which is easier to edit by hand.
   const textField = key => {
     const value = plan[key] ?? '';
     if (Array.isArray(value) && value.every(line => typeof line === 'string')) return value.join('\n');
-    if (typeof value !== 'string') throw new Error(`Plan field "${key}" must be text.`);
+    if (typeof value !== 'string') throw new Error(t('planFieldText', { key }));
     return value;
   };
 
   const csv = textField('csv');
-  if (!csv.trim()) throw new Error('This plan has no recipient CSV.');
+  if (!csv.trim()) throw new Error(t('planNoCsv'));
   const settings = plan.settings && typeof plan.settings === 'object' ? plan.settings : {};
   const batchDelay = String(settings.batchDelay ?? DEFAULT_DELAY_MS);
+  const batchSize = Number(settings.batchSize);
 
   return {
     name: typeof plan.name === 'string' ? plan.name.trim() : '',
@@ -594,7 +1023,8 @@ function parsePlan(text) {
     bcc: textField('bcc'),
     body: textField('body'),
     composeMode: settings.composeMode === 'gmail' ? 'gmail' : 'outlook',
-    batchDelay: BATCH_DELAY_OPTIONS.includes(batchDelay) ? batchDelay : String(DEFAULT_DELAY_MS)
+    batchDelay: BATCH_DELAY_OPTIONS.includes(batchDelay) ? batchDelay : String(DEFAULT_DELAY_MS),
+    batchSize: Number.isInteger(batchSize) && batchSize >= 1 && batchSize <= MAX_BATCH_SIZE ? batchSize : DEFAULT_BATCH_SIZE
   };
 }
 
@@ -603,15 +1033,16 @@ async function applyPlan(plan) {
   const planRows = parseCSV(plan.csv);
   if (!planRows.length) {
     csvHeaders = previousHeaders;
-    throw new Error('The plan CSV has no rows with an email address.');
+    throw new Error(t('planNoRows'));
   }
 
   rows = planRows;
-  generated = [];
-  currentIndex = 0;
-  previewIndex = 0;
+  dismissedNotes = [];
+  listEdited = false;
+  mapping = null;
+  resetProgress();
 
-  // Clear a previously chosen CSV file so "Generate Drafts" uses the plan's list.
+  // Clear a previously chosen CSV file so it cannot be mistaken for the plan's list.
   if ($('csvFile')) $('csvFile').value = '';
   if ($('csvText')) $('csvText').value = plan.csv;
   if ($('subject')) $('subject').value = plan.subject;
@@ -621,14 +1052,13 @@ async function applyPlan(plan) {
   if ($('templatePreset')) $('templatePreset').value = '';
   if ($('composeMode')) $('composeMode').value = plan.composeMode;
   if ($('batchDelay')) $('batchDelay').value = plan.batchDelay;
+  if ($('batchSize')) $('batchSize').value = String(plan.batchSize);
   if ($('autoSend')) $('autoSend').checked = false;
-  if ($('sendControls')) $('sendControls').classList.add('hidden');
-  if ($('previewControls')) $('previewControls').classList.add('hidden');
-  if ($('preview')) $('preview').innerHTML = '';
 
   updateCcBccVisibility(Boolean(plan.cc || plan.bcc));
   updateCsvSummary();
   renderVariableButtons();
+  renderMappingPanel();
   renderComposeModeHints();
   syncDraftActionLabels();
   await saveState();
@@ -639,8 +1069,7 @@ async function importPlanFile(file) {
   try {
     const plan = parsePlan(await file.text());
     const count = await applyPlan(plan);
-    const label = plan.name ? `"${plan.name}"` : `from "${file.name}"`;
-    renderStatus(`Plan ${label} imported: ${count} recipients. Auto-Send is off. Review the template, then click "Generate Drafts".`, 'ok');
+    renderStatus(plan.name ? t('planImportedNamed', { name: plan.name, count }) : t('planImportedFile', { name: file.name, count }), 'ok');
   } catch (err) {
     renderStatus(err.message, 'error');
   }
@@ -687,6 +1116,13 @@ TEMPLATE_FIELD_IDS.forEach(id => {
   }
 });
 
+if ($('uiLanguage')) {
+  $('uiLanguage').addEventListener('change', async () => {
+    applyLanguageSelection($('uiLanguage').value);
+    await saveState();
+  });
+}
+
 if ($('composeMode')) {
   $('composeMode').addEventListener('change', () => {
     renderComposeModeHints();
@@ -711,9 +1147,7 @@ if (typeof document !== 'undefined' && document.querySelectorAll) {
 // Collapsible CC/BCC Toggle
 if ($('toggleCcBccBtn')) {
   $('toggleCcBccBtn').addEventListener('click', () => {
-    const container = $('ccBccContainer');
-    const isHidden = container?.classList.contains('hidden');
-    updateCcBccVisibility(isHidden);
+    updateCcBccVisibility($('ccBccContainer')?.classList.contains('hidden'));
   });
 }
 
@@ -743,33 +1177,60 @@ if (dropZone) {
     });
   });
   dropZone.addEventListener('drop', async (e) => {
-    const dt = e.dataTransfer;
-    if (dt && dt.files && dt.files.length) {
-      const file = dt.files[0];
-      if (/\.json$/i.test(file.name)) {
-        await importPlanFile(file);
-        return;
-      }
-      const text = await file.text();
-      if ($('csvText')) $('csvText').value = text;
-      try {
-        await loadRows();
-        renderStatus(`CSV loaded successfully from "${file.name}" (${rows.length} rows).`, 'ok');
-      } catch (err) {
-        renderStatus(err.message, 'error');
-      }
-    }
+    const file = e.dataTransfer?.files?.[0];
+    if (file) await handleRecipientFile(file);
   });
 }
 
 if ($('csvFile')) {
   $('csvFile').addEventListener('change', async () => {
-    try {
-      await loadRows();
-      renderStatus(`CSV file selected (${rows.length} rows). Click "Generate Drafts".`, 'ok');
-    } catch (err) {
-      renderStatus(err.message, 'error');
+    await handleRecipientFile($('csvFile').files?.[0]);
+  });
+}
+
+if ($('mappingPanel')) {
+  $('mappingPanel').addEventListener('change', (event) => {
+    const kind = event.target?.dataset?.mapping;
+    if (!mapping || !kind) return;
+    if (kind === 'sheet') {
+      mapping.sheetIndex = Number(event.target.value);
+      resetMappingColumns();
+    } else if (kind === 'email') {
+      mapping.emailColumn = Number(event.target.value);
+      mapping.columns.delete(mapping.emailColumn);
+    } else if (kind === 'column') {
+      const col = Number(event.target.value);
+      if (event.target.checked) mapping.columns.add(col);
+      else mapping.columns.delete(col);
+      // Leave the list as it is so the scroll position stays put.
+      return;
     }
+    renderMappingPanel();
+  });
+  $('mappingPanel').addEventListener('click', async (event) => {
+    const kind = event.target?.dataset?.mapping;
+    if (kind === 'apply') await applyMapping();
+    if (kind === 'cancel') {
+      mapping = null;
+      renderMappingPanel();
+      renderStatus(t('mappingCancelled'), 'ok');
+    }
+  });
+}
+
+if ($('reviewPanel')) {
+  $('reviewPanel').addEventListener('change', async (event) => {
+    const { row, field } = event.target?.dataset || {};
+    if (row === undefined || !field) return;
+    await updateRecipientField(Number(row), field, event.target.value);
+    renderStatus(t('recipientUpdated', { n: Number(row) + 1 }), 'ok');
+  });
+  $('reviewPanel').addEventListener('click', async (event) => {
+    const key = event.target?.dataset?.dismiss;
+    if (!key) return;
+    dismissedNotes = [...new Set([...dismissedNotes, key])];
+    renderReviewPanel();
+    await saveState();
   });
 }
 
@@ -792,7 +1253,7 @@ if ($('exportPlanBtn')) {
   $('exportPlanBtn').addEventListener('click', () => {
     try {
       const fileName = downloadPlan(buildPlan());
-      renderStatus(`Plan exported as "${fileName}". It contains your recipient list, so keep it somewhere private.`, 'ok');
+      renderStatus(t('planExported', { name: fileName }), 'ok');
     } catch (err) {
       renderStatus(err.message, 'error');
     }
@@ -808,6 +1269,19 @@ if ($('autoSend')) {
 
 if ($('batchDelay')) {
   $('batchDelay').addEventListener('change', () => {
+    saveState();
+  });
+}
+
+if ($('batchSize')) {
+  $('batchSize').addEventListener('change', () => {
+    renderBatchControls();
+    saveState();
+  });
+}
+
+if ($('testEmail')) {
+  $('testEmail').addEventListener('input', () => {
     saveState();
   });
 }
@@ -828,6 +1302,7 @@ if ($('templatePreset')) {
 
 if ($('csvText')) {
   $('csvText').addEventListener('input', () => {
+    listEdited = true;
     saveState();
   });
 }
@@ -835,55 +1310,59 @@ if ($('csvText')) {
 if ($('clearStateBtn')) {
   $('clearStateBtn').addEventListener('click', async () => {
     if (rows.length && typeof confirm === 'function') {
-      if (!confirm('Clear all saved data, CSV rows, and progress?')) return;
+      if (!confirm(t('confirmClear'))) return;
     }
     await chrome.storage.local.remove(STORAGE_KEY);
     rows = [];
-    currentIndex = 0;
-    previewIndex = 0;
-    generated = [];
     csvHeaders = [];
+    dismissedNotes = [];
+    listEdited = false;
+    mapping = null;
+    resetProgress();
     if ($('csvText')) $('csvText').value = '';
     if ($('composeMode')) $('composeMode').value = 'outlook';
     if ($('autoSend')) $('autoSend').checked = false;
     if ($('templatePreset')) $('templatePreset').value = '';
     if ($('batchDelay')) $('batchDelay').value = '1000';
+    if ($('batchSize')) $('batchSize').value = String(DEFAULT_BATCH_SIZE);
     if ($('subject')) $('subject').value = TEMPLATE_PRESETS.courseReminder.subject;
     if ($('cc')) $('cc').value = '';
     if ($('bcc')) $('bcc').value = '';
     if ($('body')) $('body').value = TEMPLATE_PRESETS.courseReminder.body;
-    if ($('sendControls')) $('sendControls').classList.add('hidden');
-    if ($('previewControls')) $('previewControls').classList.add('hidden');
-    if ($('preview')) $('preview').innerHTML = '';
     updateCcBccVisibility(false);
     updateCsvSummary();
     renderVariableButtons();
+    renderMappingPanel();
     renderComposeModeHints();
     syncDraftActionLabels();
-    renderStatus('Saved data cleared. Ready for new merge.', 'ok');
+    renderStatus(t('cleared'), 'ok');
+    // Keep the chosen language after clearing.
+    await saveState();
   });
 }
 
 if ($('loadBtn')) {
   $('loadBtn').addEventListener('click', async () => {
     try {
-      await loadRows();
+      const restart = listEdited;
+      await loadRows({ fresh: restart });
       makeMessages();
       const issues = runPreflight();
-      currentIndex = 0;
-      previewIndex = 0;
+      // Regenerating after a template edit keeps progress, so a batch is never opened twice.
+      currentIndex = Math.min(currentIndex, generated.length);
+      previewIndex = clampPreviewIndex(previewIndex);
       await saveState();
       if ($('sendControls')) $('sendControls').classList.remove('hidden');
       if ($('previewControls')) $('previewControls').classList.remove('hidden');
       syncRangeInputs();
       syncDraftActionLabels();
-      renderPreview(`Loaded ${generated.length} rows.`);
-      const labels = actionLabels();
-      renderStatus(
-        `Ready: ${generated.length} personalized ${labels.items}. Review preview, then ${labels.openVerb} ${labels.items}.`
-          + renderPreflightIssues(issues),
-        issues.length ? 'error' : 'ok'
-      );
+      renderPreview(t('previewLoaded', { count: generated.length }));
+      renderReviewPanel();
+      const notes = reviewRecipients(rows, csvHeaders, currentTemplates());
+      const lines = [tm('ready', { count: generated.length })];
+      if (currentIndex > 0) lines.push(t('progressKept', { done: currentIndex, total: generated.length }));
+      if (notes.length) lines.push(t('readyReviewNote', { count: notes.length }));
+      renderStatus(lines.join('\n') + renderPreflightIssues(issues), issues.length ? 'error' : 'ok');
     } catch (e) {
       renderStatus(e.message, 'error');
     }
@@ -908,16 +1387,45 @@ if ($('previewNextBtn')) {
   });
 }
 
+if ($('sendTestBtn')) {
+  $('sendTestBtn').addEventListener('click', async () => {
+    if (!generated.length) return renderStatus(t('generateFirst'), 'error');
+    const testEmail = ($('testEmail')?.value ?? '').trim();
+    if (!isValidEmail(testEmail)) return renderStatus(t('testEmailInvalid'), 'error');
+    makeMessages();
+    previewIndex = clampPreviewIndex(previewIndex);
+    try {
+      await openDraftTab(buildTestMessage(generated[previewIndex], testEmail));
+      await saveState();
+      renderStatus(tm('testOpened', { n: previewIndex + 1, email: testEmail }), 'ok');
+    } catch (e) {
+      renderStatus(t('testFailed', { error: e.message }), 'error');
+    }
+  });
+}
+
+if ($('openBatchBtn')) {
+  $('openBatchBtn').addEventListener('click', async () => {
+    if (!readyToOpen()) return;
+    const range = nextBatchRange(Math.min(currentIndex, generated.length), generated.length, getBatchSize());
+    if (!range) return renderStatus(t('allBatchesDone'), 'ok');
+    await openDraftRange(range.startIndex, range.endIndex);
+  });
+}
+
+if ($('resetProgressBtn')) {
+  $('resetProgressBtn').addEventListener('click', async () => {
+    currentIndex = 0;
+    lastBatch = null;
+    syncRangeInputs();
+    await saveState();
+    renderStatus(t('progressReset'), 'ok');
+  });
+}
+
 if ($('openNextBtn')) {
   $('openNextBtn').addEventListener('click', async () => {
-    const labels = actionLabels();
-    if (!generated.length) return renderStatus('Please generate drafts first.', 'error');
-
-    makeMessages();
-    const issues = runPreflight();
-    if (issues.length) {
-      return renderStatus(`Please fix the preflight warnings before ${labels.openingVerb} ${labels.items}.` + renderPreflightIssues(issues), 'error');
-    }
+    if (!readyToOpen()) return;
     previewIndex = clampPreviewIndex(previewIndex);
     const msg = generated[previewIndex];
     const previousIndex = currentIndex;
@@ -930,84 +1438,29 @@ if ($('openNextBtn')) {
       syncRangeInputs();
       syncDraftActionLabels();
       renderPreview();
-      renderStatus(`${labels.openedVerb} draft ${previewIndex + 1}/${generated.length}: ${msg.email}${$('autoSend')?.checked ? '' : '\n\nReview the opened draft tab before sending.'}`, 'ok');
+      renderStatus(tm('openedOne', { n: previewIndex + 1, total: generated.length, email: msg.email }), 'ok');
     } catch (e) {
       currentIndex = previousIndex;
       await saveState();
       syncRangeInputs();
-      renderStatus(`Could not ${labels.openVerb} ${labels.item}: ${e.message}`, 'error');
+      renderStatus(tm('openFailed', { error: e.message }), 'error');
     }
   });
 }
 
 if ($('openRangeBtn')) {
   $('openRangeBtn').addEventListener('click', async () => {
-    const labels = actionLabels();
-    if (!generated.length) return renderStatus('Please generate drafts first.', 'error');
-
-    makeMessages();
-    const issues = runPreflight();
-    if (issues.length) {
-      return renderStatus(`Please fix the preflight warnings before ${labels.openingVerb} ${labels.items}.` + renderPreflightIssues(issues), 'error');
-    }
+    if (!readyToOpen()) return;
     let range;
     try {
       range = getSelectedRange();
     } catch (e) {
       return renderStatus(e.message, 'error');
     }
-
-    const { startIndex, endIndex } = range;
-    const selected = generated.slice(startIndex, endIndex + 1);
-    const previousIndex = currentIndex;
-    currentIndex = Math.max(currentIndex, endIndex + 1);
-    await saveState();
-
-    const delayMs = Number.parseInt($('batchDelay')?.value || `${DEFAULT_DELAY_MS}`, 10) || DEFAULT_DELAY_MS;
-    let openedCount = 0;
-    setRangeOpening(true);
-
-    const progressContainer = $('progressContainer');
-    const progressBar = $('progressBar');
-    if (progressContainer) progressContainer.classList.remove('hidden');
-    if (progressBar) progressBar.style.width = '0%';
-
-    try {
-      for (const [index, msg] of selected.entries()) {
-        renderStatus(`${$('autoSend')?.checked ? 'Opening and sending' : 'Opening'} draft ${index + 1}/${selected.length}...`, 'ok');
-        await openDraftTab(msg);
-        openedCount += 1;
-
-        if (progressBar) {
-          const percent = Math.round((openedCount / selected.length) * 100);
-          progressBar.style.width = `${percent}%`;
-        }
-
-        if (openedCount < selected.length) {
-          await sleep(delayMs);
-        }
-      }
-      previewIndex = clampPreviewIndex(currentIndex);
-      await saveState();
-      syncRangeInputs();
-      syncDraftActionLabels();
-      renderPreview();
-      renderStatus(`${labels.openedVerb} ${selected.length} ${labels.items} (${startIndex + 1}-${endIndex + 1}/${generated.length}).${$('autoSend')?.checked ? '' : '\n\nReview the opened drafts in your browser.'}`, 'ok');
-    } catch (e) {
-      currentIndex = Math.max(previousIndex, startIndex + openedCount);
-      await saveState();
-      syncRangeInputs();
-      renderStatus(`Stopped after ${labels.openingVerb} ${openedCount}/${selected.length} selected ${labels.items}: ${e.message}`, 'error');
-    } finally {
-      setRangeOpening(false);
-      setTimeout(() => {
-        if (progressContainer) progressContainer.classList.add('hidden');
-      }, 1500);
-    }
+    await openDraftRange(range.startIndex, range.endIndex);
   });
 }
 
 // Initial restoration
+applyLanguageSelection(detectUiLanguage());
 restoreState();
-renderComposeModeHints();
-syncDraftActionLabels();
