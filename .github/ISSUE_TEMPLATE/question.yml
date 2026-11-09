@@ -1,0 +1,21 @@
+name: "Question or idea / 提问或建议"
+description: "Ask how to do something, or suggest an improvement. / 询问用法，或提出改进建议。"
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before asking, the [tutorial](https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension#step-by-step-tutorial) and [troubleshooting table](https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension#troubleshooting) may already have the answer. Please do not paste real recipient data.
+
+        提问前可以先看看 [中文教程](https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension/blob/main/README.zh-CN.md#分步教程) 和 [常见问题](https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension/blob/main/README.zh-CN.md#常见问题)。请不要贴真实的收件人信息。
+  - type: textarea
+    id: question
+    attributes:
+      label: "Your question or idea / 你的问题或建议"
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: "What are you trying to do? / 你想完成什么？"
+      description: "For example: invite 170 students to an event in batches of 50. / 例如：分批邀请 170 名学生参加活动，每批 50 人。"

@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
+import { makeXlsx } from './xlsx-fixture.mjs';
 
 function createElement(id, initial = {}) {
   const listeners = new Map();
+  const classes = new Set(initial.classes || []);
   return {
     id,
     value: initial.value ?? '',
@@ -15,10 +17,17 @@ function createElement(id, initial = {}) {
     files: [],
     max: '',
     disabled: false,
+    style: {},
     classList: {
-      add() {},
-      remove() {},
-      toggle() {}
+      add(name) { classes.add(name); },
+      remove(name) { classes.delete(name); },
+      toggle(name, force) {
+        const on = force === undefined ? !classes.has(name) : Boolean(force);
+        if (on) classes.add(name);
+        else classes.delete(name);
+        return on;
+      },
+      contains(name) { return classes.has(name); }
     },
     addEventListener(type, handler) {
       if (!listeners.has(type)) listeners.set(type, []);
@@ -47,6 +56,7 @@ function createElement(id, initial = {}) {
 function loadPopup(state) {
   const elements = new Map();
   const defaults = {
+    ccBccContainer: { classes: ['hidden'] },
     csvText: { value: '' },
     composeMode: { value: 'outlook' },
     autoSend: { checked: false },
@@ -89,11 +99,19 @@ function loadPopup(state) {
   const blobs = [];
   const context = {
     console,
-    setTimeout() {},
-    Blob: class Blob {
+    // Run timers immediately so batch delays do not slow the tests down.
+    setTimeout(fn) {
+      if (typeof fn === 'function') fn();
+      return 0;
+    },
+    TextDecoder,
+    DecompressionStream,
+    Response,
+    // The exported plan's JSON is readable as blob.text; real Blob behavior is kept for xlsx.js.
+    Blob: class TestBlob extends Blob {
       constructor(parts, options = {}) {
-        this.text = parts.join('');
-        this.type = options.type;
+        super(parts, options);
+        this.text = parts.every(part => typeof part === 'string') ? parts.join('') : undefined;
       }
     },
     URL: {
@@ -129,6 +147,9 @@ function loadPopup(state) {
           async set(next) {
             saved.push(next);
             Object.assign(stored, next);
+          },
+          async remove(key) {
+            delete stored[key];
           }
         }
       },
@@ -142,19 +163,34 @@ function loadPopup(state) {
     }
   };
   vm.createContext(context);
-  const script = fs.readFileSync(new URL('../popup.js', import.meta.url), 'utf8');
+  // popup.html loads these three scripts in this order.
+  const script = ['../i18n.js', '../xlsx.js', '../popup.js']
+    .map(file => fs.readFileSync(new URL(file, import.meta.url), 'utf8'))
+    .join('\n');
   vm.runInContext(`${script}
 globalThis.__popupTestApi = {
   parseCSV,
   applyTemplate,
-  validateMessages: typeof validateMessages === 'function' ? validateMessages : undefined,
-  findMissingTemplateVariables: typeof findMissingTemplateVariables === 'function' ? findMissingTemplateVariables : undefined,
+  validateMessages,
+  findMissingTemplateVariables,
   syncDraftActionLabels,
   restoreState,
   makeMessages,
   composeUrl,
-  parsePlan: typeof parsePlan === 'function' ? parsePlan : undefined,
-  buildPlan: typeof buildPlan === 'function' ? buildPlan : undefined
+  parsePlan,
+  buildPlan,
+  rowsToCSV,
+  reviewRecipients,
+  nextBatchIndices,
+  uniqueHeaders,
+  mappingToCSV,
+  guessEmailColumn,
+  handleRecipientFile,
+  setUiLanguage,
+  applyLanguageSelection,
+  t,
+  UI_STRINGS,
+  state: () => ({ rows, openedRows: [...openedRows], generated, dismissedNotes, mapping })
 };`, context);
   return { context, elements, saved, openedTabs, createdElements, blobs, api: context.__popupTestApi };
 }
@@ -347,7 +383,7 @@ test('export plan downloads the CSV, templates, and settings without Auto-Send',
   assert.equal(plan.subject, 'Hello {{Name}}');
   assert.equal(plan.cc, 'ta@example.com');
   assert.equal(plan.body, 'Hi {{Name}},\n\nSee you there.');
-  assert.deepEqual(plan.settings, { composeMode: 'gmail', batchDelay: 2000 });
+  assert.deepEqual(plan.settings, { composeMode: 'gmail', batchDelay: 2000, batchSize: 50 });
   assert.equal(JSON.stringify(plan).includes('autoSend'), false);
 
   const link = createdElements.find(element => element.download);
@@ -454,4 +490,389 @@ test('parsePlan falls back to safe defaults for unknown settings', () => {
   assert.equal(plan.batchDelay, '1000');
   assert.equal(plan.subject, '');
   assert.equal(plan.body, '');
+});
+
+// --- 0.2.0: languages, batches, test send, review notes, Excel import, help links ---
+
+const plain = value => JSON.parse(JSON.stringify(value));
+const FIVE = 'Name,Email\nA,a@example.com\nB,b@example.com\nC,c@example.com\nD,d@example.com\nE,e@example.com';
+
+async function generate(elements, csv, { batchSize = '2', subject = 'Hi {{Name}}', body = 'Body' } = {}) {
+  elements.get('csvText').value = csv;
+  elements.get('batchSize').value = batchSize;
+  elements.get('subject').value = subject;
+  elements.get('body').value = body;
+  await elements.get('loadBtn').click();
+}
+
+test('every language has the same message keys and placeholders as English', () => {
+  const { api } = loadPopup();
+  const placeholders = text => [...text.matchAll(/\{(\w+)\}/g)].map(match => match[1]).sort().join(',');
+  const english = api.UI_STRINGS.en;
+
+  for (const lang of ['zh', 'es']) {
+    const strings = api.UI_STRINGS[lang];
+    assert.deepEqual(Object.keys(strings).sort(), Object.keys(english).sort(), `${lang} keys`);
+    for (const key of Object.keys(english)) {
+      assert.equal(placeholders(strings[key]), placeholders(english[key]), `${lang}.${key} placeholders`);
+    }
+  }
+});
+
+test('switching the language relabels the buttons and is remembered', async () => {
+  const { elements, context } = loadPopup();
+  elements.get('uiLanguage').value = 'es';
+  await elements.get('uiLanguage').dispatchEvent({ type: 'change' });
+
+  assert.equal(elements.get('openNextBtn').textContent, 'Abrir borrador de la vista previa');
+  const stored = (await context.chrome.storage.local.get()).outlookMailMergeState;
+  assert.equal(stored.uiLanguage, 'es');
+
+  const reopened = loadPopup(stored);
+  await reopened.api.restoreState();
+  assert.equal(reopened.elements.get('openNextBtn').textContent, 'Abrir borrador de la vista previa');
+  assert.equal(reopened.elements.get('uiLanguage').value, 'es');
+
+  reopened.api.applyLanguageSelection('zh');
+  assert.equal(reopened.elements.get('openRangeBtn').textContent, '打开所选草稿');
+  assert.throws(() => reopened.api.parsePlan('{bad'), /不是有效的 JSON/);
+});
+
+test('t falls back to English and fills placeholders', () => {
+  const { api } = loadPopup();
+  api.setUiLanguage('fr');
+  assert.equal(api.t('rowLabel', { n: 3 }), 'Row 3');
+  api.setUiLanguage('zh');
+  assert.equal(api.t('rowLabel', { n: 3 }), '第 3 行');
+  assert.equal(api.t('insertVariable', { name: 'FirstName' }), '插入 {{FirstName}}');
+  assert.equal(api.t('noSuchKey'), 'noSuchKey');
+});
+
+test('batches open the next group of drafts and track progress', async () => {
+  const { elements, openedTabs } = loadPopup();
+  await generate(elements, FIVE);
+
+  assert.equal(elements.get('openBatchBtn').textContent, 'Open Batch 1 of 3 (drafts 1–2)');
+  assert.equal(elements.get('batchProgress').textContent, '0 of 5 opened');
+
+  await elements.get('openBatchBtn').click();
+  assert.deepEqual(openedTabs.map(tab => decodeURIComponent(/to=([^&]+)/.exec(tab.url)[1])), ['a@example.com', 'b@example.com']);
+  assert.equal(elements.get('openBatchBtn').textContent, 'Open Batch 2 of 3 (drafts 3–4)');
+  assert.equal(elements.get('batchProgress').textContent, '2 of 5 opened');
+  assert.match(elements.get('lastBatchNote').textContent, /^Last opened: 1–2 at /);
+
+  await elements.get('openBatchBtn').click();
+  await elements.get('openBatchBtn').click();
+  assert.equal(openedTabs.length, 5);
+  assert.equal(elements.get('openBatchBtn').textContent, 'All batches opened');
+  assert.equal(elements.get('openBatchBtn').disabled, true);
+});
+
+test('regenerating after a template edit keeps progress; editing the list starts over', async () => {
+  const { elements, openedTabs } = loadPopup();
+  await generate(elements, FIVE);
+  await elements.get('openBatchBtn').click();
+
+  elements.get('subject').value = 'Hello {{Name}}';
+  await elements.get('subject').dispatchEvent({ type: 'input' });
+  await elements.get('loadBtn').click();
+  assert.equal(elements.get('openBatchBtn').textContent, 'Open Batch 2 of 3 (drafts 3–4)');
+  assert.match(elements.get('status').textContent, /Progress kept: 2 of 5 already opened/);
+
+  await elements.get('openBatchBtn').click();
+  assert.match(openedTabs.at(-1).url, /subject=Hello%20D/);
+
+  elements.get('csvText').value = FIVE.replace('A,a@', 'Ann,a@');
+  await elements.get('csvText').dispatchEvent({ type: 'input' });
+  await elements.get('loadBtn').click();
+  assert.equal(elements.get('openBatchBtn').textContent, 'Open Batch 1 of 3 (drafts 1–2)');
+});
+
+test('Auto-Send changes the batch button to send wording', async () => {
+  const { elements } = loadPopup();
+  await generate(elements, FIVE);
+  elements.get('autoSend').checked = true;
+  await elements.get('autoSend').dispatchEvent({ type: 'change' });
+
+  assert.equal(elements.get('openBatchBtn').textContent, 'Send Batch 1 of 3 (emails 1–2)');
+  assert.equal(elements.get('sendTestBtn').textContent, 'Send Test to Me');
+});
+
+test('send test opens the previewed message for my own address only', async () => {
+  const { elements, openedTabs, api } = loadPopup();
+  await generate(elements, FIVE);
+
+  await elements.get('sendTestBtn').click();
+  assert.equal(openedTabs.length, 0);
+  assert.match(elements.get('status').textContent, /Enter your own email address/);
+  assert.equal(elements.get('statusHelp').classList.contains('hidden'), false);
+
+  elements.get('testEmail').value = 'me@example.com';
+  await elements.get('sendTestBtn').click();
+  assert.equal(openedTabs.length, 1);
+  assert.match(openedTabs[0].url, /to=me%40example\.com/);
+  assert.match(openedTabs[0].url, /subject=%5BTEST%5D%20Hi%20A/);
+  assert.doesNotMatch(openedTabs[0].url, /a%40example\.com/);
+  assert.equal(api.state().openedRows.length, 0);
+  assert.match(elements.get('status').textContent, /Opened a test copy of draft 1, addressed to me@example\.com/);
+  assert.equal(elements.get('statusHelp').classList.contains('hidden'), true);
+});
+
+const REVIEW_CSV = [
+  'FirstName,Email',
+  'Ada,ada.lovelace@school.edu',
+  'Jhoune-Lynn,lynn.duplan@school.edu',
+  'Si on,sion.chen@school.edu',
+  'Grace,grace@gmail.com',
+  'Alan,alan.turing@school.edu',
+  ',empty@school.edu'
+].join('\n');
+
+test('reviewRecipients flags name mismatches, multi-word names, odd domains, and empty values', () => {
+  const { api } = loadPopup();
+  const rows = api.parseCSV(REVIEW_CSV);
+
+  const notes = plain(api.reviewRecipients(rows, ['FirstName', 'Email'], ['Hi {{FirstName}}']))
+    .map(note => `${note.index}:${note.key.split(':')[0]}`);
+
+  assert.deepEqual(notes, ['1:mismatch', '2:multiword', '3:domain', '5:empty']);
+});
+
+test('reviewRecipients skips the name check when addresses do not contain names', () => {
+  const { api } = loadPopup();
+  const rows = api.parseCSV('FirstName,Email\nAda,u1001@school.edu\nGrace,u1002@school.edu\nAlan,u1003@school.edu');
+
+  assert.equal(api.reviewRecipients(rows, ['FirstName', 'Email'], ['Hi {{FirstName}}']).length, 0);
+});
+
+test('review notes can be fixed inline or dismissed', async () => {
+  const { elements, api } = loadPopup();
+  await generate(elements, REVIEW_CSV, { subject: 'Hi {{FirstName}}' });
+  const panel = elements.get('reviewPanel');
+
+  assert.match(panel.innerHTML, /4 recipients worth a quick look/);
+  assert.match(elements.get('status').textContent, /4 recipients are worth a quick look below/);
+
+  await panel.dispatchEvent({ type: 'change', target: { dataset: { row: '1', field: 'FirstName' }, value: 'Lynn' } });
+  assert.match(elements.get('csvText').value, /^Lynn,lynn\.duplan@school\.edu$/m);
+  assert.match(elements.get('preview').innerHTML, /Hi Ada/);
+  assert.match(panel.innerHTML, /3 recipients worth a quick look/);
+
+  const domainNote = plain(api.reviewRecipients(api.state().rows, ['FirstName', 'Email'], ['Hi {{FirstName}}'])).find(note => note.email === 'grace@gmail.com');
+  await panel.dispatchEvent({ type: 'click', target: { dataset: { dismiss: domainNote.key } } });
+  assert.match(panel.innerHTML, /2 recipients worth a quick look/);
+  assert.doesNotMatch(panel.innerHTML, /grace@gmail\.com/);
+});
+
+function xlsxFile(name, sheets) {
+  const buffer = makeXlsx(sheets);
+  return { name, async arrayBuffer() { return buffer; } };
+}
+
+const ROSTER = [{
+  name: 'all students',
+  rows: [
+    ['Student', 'Last Name', 'First Name', 'Suffolk Email Address', 'Cumulative GPA'],
+    ['Ada Lovelace (U1)', 'Lovelace', 'Ada', 'ada@school.edu', 3.9],
+    ['No Email (U2)', 'Email', 'No', '', 2.5],
+    ['Grace Hopper (U3)', 'Hopper', 'Grace', 'grace@school.edu', 3.7]
+  ]
+}];
+
+test('Excel import picks the email and name columns and leaves the rest out', async () => {
+  const { elements, api } = loadPopup();
+  await api.handleRecipientFile(xlsxFile('roster.xlsx', ROSTER));
+
+  const panel = elements.get('mappingPanel');
+  assert.equal(panel.classList.contains('hidden'), false);
+  assert.match(panel.innerHTML, /Choose columns from &quot;roster\.xlsx&quot;/);
+  assert.match(panel.innerHTML, /Cumulative GPA/);
+  assert.match(panel.innerHTML, /2 of 3 rows have an email address/);
+  assert.deepEqual(plain([...api.state().mapping.columns]), [1, 2]);
+
+  await panel.dispatchEvent({ type: 'click', target: { dataset: { mapping: 'apply' } } });
+
+  assert.equal(elements.get('csvText').value, 'Last Name,First Name,Email\nLovelace,Ada,ada@school.edu\nHopper,Grace,grace@school.edu');
+  assert.equal(api.state().rows.length, 2);
+  assert.equal(api.state().mapping, null);
+  assert.match(elements.get('status').textContent, /Loaded 2 recipients from "roster\.xlsx"/);
+});
+
+test('Excel import can include an extra column on request', async () => {
+  const { elements, api } = loadPopup();
+  await api.handleRecipientFile(xlsxFile('roster.xlsx', ROSTER));
+  const panel = elements.get('mappingPanel');
+
+  await panel.dispatchEvent({ type: 'change', target: { dataset: { mapping: 'column' }, value: '0', checked: true } });
+  await panel.dispatchEvent({ type: 'change', target: { dataset: { mapping: 'column' }, value: '1', checked: false } });
+  await panel.dispatchEvent({ type: 'click', target: { dataset: { mapping: 'apply' } } });
+
+  assert.equal(elements.get('csvText').value.split('\n')[0], 'Student,First Name,Email');
+  assert.match(elements.get('csvText').value, /^Ada Lovelace \(U1\),Ada,ada@school\.edu$/m);
+});
+
+test('Excel import explains old .xls files and unreadable files', async () => {
+  const { elements, api } = loadPopup();
+
+  await api.handleRecipientFile({ name: 'roster.xls', async arrayBuffer() { return new ArrayBuffer(8); } });
+  assert.match(elements.get('status').textContent, /Old \.xls files are not supported/);
+
+  await api.handleRecipientFile({ name: 'broken.xlsx', async arrayBuffer() { return new TextEncoder().encode('not a zip').buffer; } });
+  assert.match(elements.get('status').textContent, /Could not read this Excel file/);
+  assert.equal(elements.get('statusHelp').classList.contains('hidden'), false);
+});
+
+test('guessEmailColumn falls back to the column whose values look like email addresses', () => {
+  const { api } = loadPopup();
+  const headers = ['Name', 'Contact', 'Notes'];
+  const dataRows = [['Ada', 'ada@example.com', 'x'], ['Grace', 'grace@example.com', 'y@']];
+
+  assert.equal(api.guessEmailColumn(headers, dataRows), 1);
+  assert.equal(api.guessEmailColumn(['Name', 'Correo'], [['Ada', '']]), 1);
+});
+
+test('mappingToCSV and rowsToCSV quote values that need it', () => {
+  const { api } = loadPopup();
+
+  assert.equal(
+    api.mappingToCSV(['Name', 'Note', 'Mail'], [['Lovelace, Ada', 'Says "hi"', 'ada@example.com']], 2, new Set([0, 1])),
+    'Name,Note,Email\n"Lovelace, Ada","Says ""hi""",ada@example.com'
+  );
+  assert.equal(api.rowsToCSV(['A', 'B'], [{ A: 'line\nbreak', B: 'plain' }]), 'A,B\n"line\nbreak",plain');
+});
+
+test('plans carry the batch size', () => {
+  const { api } = loadPopup();
+  const base = { type: 'mail-merge-plan', version: 1, csv: 'Email\na@example.com' };
+
+  assert.equal(api.parsePlan(JSON.stringify({ ...base, settings: { batchSize: 40 } })).batchSize, 40);
+  assert.equal(api.parsePlan(JSON.stringify({ ...base, settings: { batchSize: 0 } })).batchSize, 50);
+  assert.equal(api.parsePlan(JSON.stringify(base)).batchSize, 50);
+});
+
+// --- Review fixes: progress tracking, concurrency, headers, clearing ---
+
+test('opening a single draft does not make the batch button skip earlier recipients', async () => {
+  const { elements, openedTabs, api } = loadPopup();
+  await generate(elements, FIVE, { batchSize: '10' });
+
+  await elements.get('previewNextBtn').click();
+  await elements.get('previewNextBtn').click();
+  await elements.get('previewNextBtn').click();
+  await elements.get('previewNextBtn').click();
+  await elements.get('openNextBtn').click();
+  assert.match(openedTabs[0].url, /to=e%40example\.com/);
+  assert.equal(elements.get('batchProgress').textContent, '1 of 5 opened');
+  assert.equal(elements.get('openBatchBtn').textContent, 'Open Batch 1 of 1 (drafts 1–4)');
+
+  await elements.get('openBatchBtn').click();
+  assert.deepEqual(openedTabs.slice(1).map(tab => /to=(\w)%40/.exec(tab.url)[1]), ['a', 'b', 'c', 'd']);
+  assert.deepEqual(plain(api.state().openedRows).sort(), [0, 1, 2, 3, 4]);
+  assert.equal(elements.get('openBatchBtn').textContent, 'All batches opened');
+});
+
+test('a batch that stops part-way saves only the drafts that actually opened', async () => {
+  const { elements, openedTabs, context, api } = loadPopup();
+  await generate(elements, FIVE, { batchSize: '3' });
+  const create = context.chrome.tabs.create;
+  context.chrome.tabs.create = (options, callback) => {
+    if (openedTabs.length === 1) throw new Error('Tab limit reached');
+    create(options, callback);
+  };
+
+  await elements.get('openBatchBtn').click();
+  assert.equal(openedTabs.length, 1);
+  assert.match(elements.get('status').textContent, /Stopped after opening 1 of 3 drafts: Tab limit reached/);
+  const stored = (await context.chrome.storage.local.get()).outlookMailMergeState;
+  assert.deepEqual(plain(stored.openedRows), [0]);
+
+  context.chrome.tabs.create = create;
+  assert.equal(elements.get('openBatchBtn').textContent, 'Open Batch 1 of 2 (drafts 2–4)');
+  await elements.get('openBatchBtn').click();
+  assert.deepEqual(openedTabs.map(tab => /to=(\w)%40/.exec(tab.url)[1]), ['a', 'b', 'c', 'd']);
+  assert.deepEqual(plain(api.state().openedRows), [0, 1, 2, 3]);
+});
+
+test('a second batch cannot start while one is still opening', async () => {
+  const { elements, openedTabs } = loadPopup();
+  await generate(elements, FIVE, { batchSize: '2' });
+
+  const first = elements.get('openBatchBtn').click();
+  const second = elements.get('openBatchBtn').click();
+  await Promise.all([first, second]);
+
+  assert.deepEqual(openedTabs.map(tab => /to=(\w)%40/.exec(tab.url)[1]), ['a', 'b']);
+  assert.equal(elements.get('openBatchBtn').textContent, 'Open Batch 2 of 3 (drafts 3–4)');
+});
+
+test('progress saved by 0.1.x is restored as opened rows', async () => {
+  const generated = ['a', 'b', 'c'].map(letter => ({ email: `${letter}@example.com`, cc: '', bcc: '', subject: 'S', body: 'B', row: {} }));
+  const { elements, api } = loadPopup({
+    csvText: 'Name,Email\nA,a@example.com\nB,b@example.com\nC,c@example.com',
+    rows: [{ Name: 'A', Email: 'a@example.com' }, { Name: 'B', Email: 'b@example.com' }, { Name: 'C', Email: 'c@example.com' }],
+    csvHeaders: ['Name', 'Email'],
+    generated,
+    currentIndex: 2,
+    previewIndex: 2
+  });
+
+  await api.restoreState();
+
+  assert.deepEqual(plain(api.state().openedRows), [0, 1]);
+  assert.equal(elements.get('batchProgress').textContent, '2 of 3 opened');
+});
+
+test('clearing an email address in a review note is refused', async () => {
+  const { elements, api } = loadPopup();
+  await generate(elements, REVIEW_CSV, { subject: 'Hi {{FirstName}}' });
+  const before = elements.get('csvText').value;
+
+  await elements.get('reviewPanel').dispatchEvent({ type: 'change', target: { dataset: { row: '3', field: 'Email' }, value: '  ' } });
+
+  assert.equal(elements.get('csvText').value, before);
+  assert.equal(api.state().rows.length, 6);
+  assert.match(elements.get('status').textContent, /email address cannot be empty/);
+});
+
+test('uniqueHeaders never repeats a name, even when the sheet already has "(2)" headers', () => {
+  const { api } = loadPopup();
+  const headers = plain(api.uniqueHeaders(['Name', 'Name', 'Name (2)', 'Email', ''], 5));
+
+  assert.deepEqual(headers, ['Name', 'Name (2)', 'Name (2) (2)', 'Email', 'Column 5']);
+});
+
+test('Clear Data also clears the test email address', async () => {
+  const { elements, context } = loadPopup();
+  await generate(elements, FIVE);
+  elements.get('testEmail').value = 'me@example.com';
+  await elements.get('testEmail').dispatchEvent({ type: 'input' });
+
+  await elements.get('clearStateBtn').click();
+
+  assert.equal(elements.get('testEmail').value, '');
+  const stored = (await context.chrome.storage.local.get()).outlookMailMergeState;
+  assert.equal(stored.testEmail, '');
+});
+
+test('with Auto-Send, the test message does not claim the email was already sent', async () => {
+  const { elements } = loadPopup();
+  await generate(elements, FIVE);
+  elements.get('autoSend').checked = true;
+  elements.get('testEmail').value = 'me@example.com';
+
+  await elements.get('sendTestBtn').click();
+
+  assert.match(elements.get('status').textContent, /^Opened a test copy of email 1 for me@example\.com\. Auto-Send will try to send it/);
+});
+
+test('Excel column picker labels its selects for screen readers', async () => {
+  const { elements, api } = loadPopup();
+  await api.handleRecipientFile(xlsxFile('roster.xlsx', [...ROSTER, { name: 'Second', rows: [['Email'], ['x@example.com']] }]));
+  const html = elements.get('mappingPanel').innerHTML;
+
+  assert.match(html, /<label for="mappingSheet">/);
+  assert.match(html, /<select id="mappingSheet"/);
+  assert.match(html, /<label for="mappingEmail">/);
+  assert.match(html, /<select id="mappingEmail"/);
+  assert.match(html, /role="group" aria-labelledby="mappingColumnsLabel"/);
 });
