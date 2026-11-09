@@ -10,11 +10,14 @@ export function zip(files, { store = false } = {}) {
     const raw = Buffer.from(text);
     const data = store ? raw : zlib.deflateRawSync(raw);
     const method = store ? 0 : 8;
+    // Real CRCs, so files written here (like examples/sample-roster.xlsx) also open in Excel.
+    const crc = zlib.crc32(raw);
 
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);
     local.writeUInt16LE(method, 8);
+    local.writeUInt32LE(crc, 14);
     local.writeUInt32LE(data.length, 18);
     local.writeUInt32LE(raw.length, 22);
     local.writeUInt16LE(nameBuf.length, 26);
@@ -24,6 +27,7 @@ export function zip(files, { store = false } = {}) {
     central.writeUInt16LE(20, 4);
     central.writeUInt16LE(20, 6);
     central.writeUInt16LE(method, 10);
+    central.writeUInt32LE(crc, 16);
     central.writeUInt32LE(data.length, 20);
     central.writeUInt32LE(raw.length, 24);
     central.writeUInt16LE(nameBuf.length, 28);
@@ -70,7 +74,10 @@ export function makeXlsx(sheets, options = {}) {
     return { name: sheet.name, id: `rId${s + 1}`, target: `worksheets/sheet${s + 1}.xml` };
   });
   files['xl/workbook.xml'] = `<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheetEntries.map((sheet, i) => `<sheet name="${escapeXml(sheet.name)}" sheetId="${i + 1}" r:id="${sheet.id}"/>`).join('')}</sheets></workbook>`;
-  files['xl/_rels/workbook.xml.rels'] = `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheetEntries.map(sheet => `<Relationship Id="${sheet.id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="${sheet.target}"/>`).join('')}</Relationships>`;
+  files['xl/_rels/workbook.xml.rels'] = `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheetEntries.map(sheet => `<Relationship Id="${sheet.id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="${sheet.target}"/>`).join('')}<Relationship Id="rIdStrings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>`;
+  // Package parts that Excel itself requires; readXlsx does not need them.
+  files['[Content_Types].xml'] = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheetEntries.map(sheet => `<Override PartName="/xl/${sheet.target}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>`;
+  files['_rels/.rels'] = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
   files['xl/sharedStrings.xml'] = `<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${shared.map(text => `<si><t xml:space="preserve">${escapeXml(text)}</t></si>`).join('')}</sst>`;
   Object.assign(files, options.extraFiles || {});
   return zip(files, options);

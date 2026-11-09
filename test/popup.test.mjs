@@ -7,6 +7,7 @@ import { makeXlsx } from './xlsx-fixture.mjs';
 function createElement(id, initial = {}) {
   const listeners = new Map();
   const classes = new Set(initial.classes || []);
+  const attributes = new Map();
   return {
     id,
     value: initial.value ?? '',
@@ -18,6 +19,10 @@ function createElement(id, initial = {}) {
     max: '',
     disabled: false,
     style: {},
+    dataset: {},
+    setAttribute(name, value) { attributes.set(name, String(value)); },
+    getAttribute(name) { return attributes.has(name) ? attributes.get(name) : null; },
+    removeAttribute(name) { attributes.delete(name); },
     classList: {
       add(name) { classes.add(name); },
       remove(name) { classes.delete(name); },
@@ -182,6 +187,10 @@ globalThis.__popupTestApi = {
   rowsToCSV,
   reviewRecipients,
   nextBatchIndices,
+  variableQueryAt,
+  variableSuggestions,
+  applySuggestion,
+  templateVariables,
   uniqueHeaders,
   mappingToCSV,
   guessEmailColumn,
@@ -190,7 +199,7 @@ globalThis.__popupTestApi = {
   applyLanguageSelection,
   t,
   UI_STRINGS,
-  state: () => ({ rows, openedRows: [...openedRows], generated, dismissedNotes, mapping })
+  state: () => ({ rows, openedRows: [...openedRows], generated, dismissedNotes, mapping, wizardStep, wizardOn })
 };`, context);
   return { context, elements, saved, openedTabs, createdElements, blobs, api: context.__popupTestApi };
 }
@@ -246,7 +255,7 @@ test('findMissingTemplateVariables reports variables that are not CSV headers', 
   assert.deepEqual(Array.from(missing), ['Coursee']);
 });
 
-test('validateMessages reports invalid, duplicate, and overlapping recipients', () => {
+test('validateMessages reports invalid and overlapping recipients but allows repeated addresses', () => {
   const { api } = loadPopup();
   const messages = [
     {
@@ -268,7 +277,8 @@ test('validateMessages reports invalid, duplicate, and overlapping recipients', 
   const issues = api.validateMessages(messages);
 
   assert(issues.some(issue => issue.includes('Invalid email address: bad-email')));
-  assert(issues.some(issue => issue.includes('Duplicate To recipient: student@example.com')));
+  // The same address on two rows is a review note now (e.g. one parent of two students), not a blocking issue.
+  assert(!issues.some(issue => /Duplicate/.test(issue)));
   assert(issues.some(issue => issue.includes('also appears in CC/BCC')));
 });
 
@@ -875,4 +885,281 @@ test('Excel column picker labels its selects for screen readers', async () => {
   assert.match(html, /<label for="mappingEmail">/);
   assert.match(html, /<select id="mappingEmail"/);
   assert.match(html, /role="group" aria-labelledby="mappingColumnsLabel"/);
+});
+
+// --- 0.2.1: defaults, repeated addresses, {{ suggestions, live warnings, sample data, wizard ---
+
+test('{{Name|default}} fills in the default only when the value is empty', () => {
+  const { api } = loadPopup();
+
+  assert.equal(api.applyTemplate('Hi {{FirstName|there}},', { FirstName: '' }), 'Hi there,');
+  assert.equal(api.applyTemplate('Hi {{FirstName|there}},', { FirstName: '  ' }), 'Hi there,');
+  assert.equal(api.applyTemplate('Hi {{ FirstName | there }},', { FirstName: 'Ada' }), 'Hi Ada,');
+  assert.equal(api.applyTemplate('Hi {{FirstName}},', { FirstName: '' }), 'Hi ,');
+  assert.deepEqual(plain(api.templateVariables('{{A|x}} {{B}} {{A}}')), ['A', 'B']);
+});
+
+test('an empty value with a default is not flagged, unless the variable is also used without one', () => {
+  const { api } = loadPopup();
+  const rows = api.parseCSV('FirstName,Email\n,empty@school.edu\nAda,ada@school.edu');
+
+  assert.equal(api.reviewRecipients(rows, ['FirstName', 'Email'], ['Hi {{FirstName|there}}']).length, 0);
+  assert.equal(api.reviewRecipients(rows, ['FirstName', 'Email'], ['Hi {{FirstName|there}}', 'Dear {{FirstName}}']).length, 1);
+});
+
+test('a repeated address is a review note and does not block sending', async () => {
+  const { elements, openedTabs, api } = loadPopup();
+  const csv = 'Student,Email\nAda,parent@example.com\nAlan,parent@example.com\nGrace,grace@example.com';
+  await generate(elements, csv, { subject: 'About {{Student}}', batchSize: '5' });
+
+  assert.equal(elements.get('status').className, 'ok');
+  const notes = plain(api.reviewRecipients(api.state().rows, ['Student', 'Email'], ['About {{Student}}']));
+  assert.deepEqual(notes.map(note => `${note.index}:${note.key.split(':')[0]}`), ['0:duplicate', '1:duplicate']);
+  assert.match(notes[0].message, /appears 2 times, so it will get 2 emails/);
+
+  await elements.get('openBatchBtn').click();
+  assert.equal(openedTabs.length, 3);
+});
+
+test('typing {{ suggests columns and Enter inserts the chosen one', async () => {
+  const { elements, api } = loadPopup();
+  assert.deepEqual(plain(api.variableQueryAt('Hi {{Fi', 7)), { start: 3, query: 'Fi' });
+  assert.equal(api.variableQueryAt('Hi {{Name}} ', 12), null);
+  assert.deepEqual(plain(api.variableSuggestions(['FirstName', 'LastName', 'Email'], 'na')), ['FirstName', 'LastName']);
+  assert.deepEqual(plain(api.applySuggestion('Hi {{Fi', 3, 7, 'FirstName')), { text: 'Hi {{FirstName}}', cursor: 16 });
+  assert.deepEqual(plain(api.applySuggestion('Hi {{Fir}} there', 3, 8, 'FirstName')), { text: 'Hi {{FirstName}} there', cursor: 16 });
+
+  elements.get('csvText').value = 'FirstName,LastName,Email\nAda,Lovelace,ada@example.com';
+  await elements.get('loadBtn').click();
+  const body = elements.get('body');
+  const box = elements.get('variableSuggest');
+  body.value = 'Hi {{la';
+  await body.dispatchEvent({ type: 'input' });
+  assert.equal(box.classList.contains('hidden'), false);
+  assert.match(box.innerHTML, /data-header="LastName"/);
+  assert.doesNotMatch(box.innerHTML, /data-header="Email"/);
+
+  await body.dispatchEvent({ type: 'keydown', key: 'Enter', preventDefault() {} });
+  assert.equal(body.value, 'Hi {{LastName}}');
+  assert.equal(box.classList.contains('hidden'), true);
+
+  body.value = 'Hi {{';
+  await body.dispatchEvent({ type: 'input' });
+  await body.dispatchEvent({ type: 'keydown', key: 'ArrowDown', preventDefault() {} });
+  await box.dispatchEvent({ type: 'mousedown', target: { dataset: { header: 'Email' } }, preventDefault() {} });
+  assert.equal(body.value, 'Hi {{Email}}');
+});
+
+test('unknown variables are flagged while typing, with the closest column suggested', async () => {
+  const { elements } = loadPopup();
+  const warnings = elements.get('templateWarnings');
+  const body = elements.get('body');
+
+  body.value = 'Hi {{Frist Name}}';
+  await body.dispatchEvent({ type: 'input' });
+  assert.equal(warnings.classList.contains('hidden'), true, 'no list loaded yet');
+
+  elements.get('csvText').value = 'FirstName,Email\nAda,ada@example.com';
+  elements.get('subject').value = 'Hello';
+  await elements.get('loadBtn').click();
+  assert.equal(warnings.textContent, 'Not in your list: {{Frist Name}}. Did you mean {{FirstName}}?');
+  assert.equal(warnings.classList.contains('hidden'), false);
+
+  body.value = 'Hi {{Zebra}}';
+  await body.dispatchEvent({ type: 'input' });
+  assert.equal(warnings.textContent, 'Not in your list: {{Zebra}}. Check the spelling, capitals, and spaces.');
+
+  body.value = 'Hi {{FirstName|there}}';
+  await body.dispatchEvent({ type: 'input' });
+  assert.equal(warnings.classList.contains('hidden'), true);
+});
+
+test('sample data loads a made-up list, builds drafts, and opens the review step', async () => {
+  const { elements, api, openedTabs } = loadPopup();
+  elements.get('autoSend').checked = true;
+
+  await elements.get('tryDemoBtn').click();
+
+  const { rows, generated, wizardStep } = api.state();
+  assert.equal(rows.length, 7);
+  assert.equal(generated.length, 7);
+  assert.equal(wizardStep, 3);
+  assert.equal(elements.get('autoSend').checked, false);
+  assert.equal(openedTabs.length, 0);
+  assert.match(elements.get('status').textContent, /^Sample data loaded: 7 made-up recipients/);
+  assert.match(generated[3].body, /^Hi there,/);
+  // Only reserved example domains, so a sample draft can never reach a real mailbox.
+  assert.ok(rows.every(row => /@example\.(edu|net)$/.test(row.Email)));
+  assert.match(elements.get('reviewPanel').innerHTML, /4 recipients worth a quick look/);
+});
+
+test('sample data asks before replacing a list that is already loaded', async () => {
+  const { elements, api, context } = loadPopup();
+  elements.get('csvText').value = FIVE;
+  await elements.get('loadBtn').click();
+  context.confirm = () => false;
+
+  await elements.get('tryDemoBtn').click();
+
+  assert.equal(api.state().rows.length, 5);
+  assert.equal(elements.get('csvText').value, FIVE);
+});
+
+test('step-by-step mode unlocks each step in order', async () => {
+  const { elements, api } = loadPopup();
+  const app = elements.get('app');
+  const next = elements.get('wizardNext');
+
+  assert.equal(app.classList.contains('wizard'), true);
+  assert.equal(app.dataset.currentStep, '1');
+  assert.equal(next.disabled, true);
+  assert.equal(elements.get('wizardHint').textContent, 'Load a recipient list first.');
+  assert.equal(next.textContent, 'Next: write the email →');
+
+  await api.handleRecipientFile({ name: 'list.csv', async text() { return FIVE; } });
+  assert.equal(next.disabled, false);
+  await next.click();
+  assert.equal(app.dataset.currentStep, '2');
+  assert.equal(next.textContent, 'Next: generate and review →');
+  assert.equal(elements.get('stepTab3').disabled, true);
+
+  elements.get('subject').value = 'Hi {{Nmae}}';
+  await next.click();
+  assert.equal(app.dataset.currentStep, '2', 'a blocking problem keeps you on the email step');
+  assert.equal(elements.get('status').className, 'error');
+
+  elements.get('subject').value = 'Hi {{Name}}';
+  elements.get('body').value = 'See you on Tuesday.';
+  await next.click();
+  assert.equal(app.dataset.currentStep, '3');
+  assert.equal(api.state().generated.length, 5);
+  assert.equal(elements.get('stepTab4').disabled, false);
+
+  await next.click();
+  assert.equal(app.dataset.currentStep, '4');
+  assert.equal(next.classList.contains('hidden'), true);
+  await elements.get('wizardBack').click();
+  assert.equal(app.dataset.currentStep, '3');
+  await elements.get('stepTab1').click();
+  assert.equal(app.dataset.currentStep, '1');
+  assert.equal(elements.get('stepTab1').classList.contains('active'), true);
+});
+
+test('step-by-step mode can be switched off, and the choice is remembered', async () => {
+  const { elements, context } = loadPopup();
+  await elements.get('wizardToggle').click();
+
+  assert.equal(elements.get('app').classList.contains('wizard'), false);
+  assert.equal(elements.get('wizardToggle').textContent, 'Show one step at a time');
+  const stored = (await context.chrome.storage.local.get()).outlookMailMergeState;
+  assert.equal(stored.wizardOn, false);
+
+  const reopened = loadPopup(stored);
+  await reopened.api.restoreState();
+  assert.equal(reopened.elements.get('app').classList.contains('wizard'), false);
+});
+
+// --- PR #5 review fixes ---
+
+test('a pasted list can move on to the Email step, and a broken one stays on step 1', async () => {
+  const { elements, api } = loadPopup();
+  const next = elements.get('wizardNext');
+  const csvText = elements.get('csvText');
+
+  csvText.value = 'Name,Email Course';
+  await csvText.dispatchEvent({ type: 'input' });
+  assert.equal(next.disabled, false);
+  await next.click();
+  assert.equal(elements.get('app').dataset.currentStep, '1');
+  assert.equal(elements.get('status').className, 'error');
+
+  csvText.value = FIVE;
+  await csvText.dispatchEvent({ type: 'input' });
+  await next.click();
+  assert.equal(elements.get('app').dataset.currentStep, '2');
+  assert.equal(api.state().rows.length, 5);
+});
+
+test('Review and Send unlock only after drafts were generated without blocking problems', async () => {
+  const { elements } = loadPopup();
+  await api_load(elements);
+  const body = elements.get('body');
+
+  // Typing in the template builds messages for the live preview, but must not unlock later steps.
+  body.value = 'Hi {{Name}}';
+  await body.dispatchEvent({ type: 'input' });
+  assert.equal(elements.get('stepTab3').disabled, true);
+  assert.equal(elements.get('stepTab4').disabled, true);
+
+  elements.get('subject').value = 'About {{Nmae}}';
+  await elements.get('wizardNext').click();
+  assert.equal(elements.get('app').dataset.currentStep, '2');
+  assert.equal(elements.get('stepTab3').disabled, true);
+  await elements.get('stepTab4').click();
+  assert.equal(elements.get('app').dataset.currentStep, '2');
+
+  elements.get('subject').value = 'About {{Name}}';
+  await elements.get('wizardNext').click();
+  assert.equal(elements.get('app').dataset.currentStep, '3');
+  assert.equal(elements.get('stepTab4').disabled, false);
+});
+
+async function api_load(elements) {
+  elements.get('csvText').value = FIVE;
+  await elements.get('csvText').dispatchEvent({ type: 'input' });
+  await elements.get('wizardNext').click();
+  assert.equal(elements.get('app').dataset.currentStep, '2');
+}
+
+test('a suggestion is not inserted once the caret has left the unfinished {{', async () => {
+  const { elements } = loadPopup();
+  await api_load(elements);
+  const body = elements.get('body');
+  let caret = null;
+  Object.defineProperty(body, 'selectionStart', { get() { return caret ?? this.value.length; } });
+
+  body.value = 'Hello {{Na';
+  await body.dispatchEvent({ type: 'input' });
+  assert.equal(elements.get('variableSuggest').classList.contains('hidden'), false);
+
+  caret = 0; // Home
+  await body.dispatchEvent({ type: 'keydown', key: 'Enter', preventDefault() {} });
+  assert.equal(body.value, 'Hello {{Na');
+  assert.equal(elements.get('variableSuggest').classList.contains('hidden'), true);
+});
+
+test('suggestion keys are left to the input method while composing', async () => {
+  const { elements } = loadPopup();
+  await api_load(elements);
+  const body = elements.get('body');
+  body.value = 'Hi {{Na';
+  await body.dispatchEvent({ type: 'input' });
+
+  let prevented = false;
+  await body.dispatchEvent({ type: 'keydown', key: 'Enter', isComposing: true, preventDefault() { prevented = true; } });
+
+  assert.equal(prevented, false);
+  assert.equal(body.value, 'Hi {{Na');
+  assert.equal(elements.get('variableSuggest').classList.contains('hidden'), false);
+});
+
+test('the field tells screen readers which suggestion is active', async () => {
+  const { elements } = loadPopup();
+  await api_load(elements);
+  const body = elements.get('body');
+  assert.equal(body.getAttribute('aria-controls'), 'variableSuggest');
+  assert.equal(body.getAttribute('aria-expanded'), 'false');
+
+  body.value = 'Hi {{';
+  await body.dispatchEvent({ type: 'input' });
+  assert.equal(body.getAttribute('aria-expanded'), 'true');
+  assert.equal(body.getAttribute('aria-activedescendant'), 'variableSuggest-0');
+  assert.match(elements.get('variableSuggest').innerHTML, /id="variableSuggest-1"/);
+
+  await body.dispatchEvent({ type: 'keydown', key: 'ArrowDown', preventDefault() {} });
+  assert.equal(body.getAttribute('aria-activedescendant'), 'variableSuggest-1');
+
+  await body.dispatchEvent({ type: 'keydown', key: 'Escape', preventDefault() {} });
+  assert.equal(body.getAttribute('aria-expanded'), 'false');
+  assert.equal(body.getAttribute('aria-activedescendant'), null);
 });

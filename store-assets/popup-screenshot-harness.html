@@ -6,7 +6,7 @@
   <link rel="stylesheet" href="/popup.css" />
 </head>
 <body>
-  <main>
+  <main id="app" class="wizard" data-current-step="1">
     <header class="app-header">
       <div class="header-title-group">
         <div class="app-icon">✉</div>
@@ -20,12 +20,20 @@
           <option value="zh">中文</option>
           <option value="es">Español</option>
         </select>
-        <span class="version-badge">v0.2.0</span>
+        <span class="version-badge">v0.2.1</span>
       </div>
     </header>
 
+    <!-- Step bar, shown in step-by-step mode -->
+    <nav class="step-bar wizard-only" aria-label="Steps">
+      <button type="button" class="step-tab" id="stepTab1"><span class="step-num">1</span><span data-i18n="stepRecipients">Recipients</span></button>
+      <button type="button" class="step-tab" id="stepTab2"><span class="step-num">2</span><span data-i18n="stepEmail">Email</span></button>
+      <button type="button" class="step-tab" id="stepTab3"><span class="step-num">3</span><span data-i18n="stepReview">Review</span></button>
+      <button type="button" class="step-tab" id="stepTab4"><span class="step-num">4</span><span data-i18n="stepSend">Send</span></button>
+    </nav>
+
     <!-- Plan Import / Export -->
-    <section class="plan-bar">
+    <section class="plan-bar" data-step="1">
       <span class="plan-bar-label"><span class="card-title-icon">📦</span><span data-i18n="planBarLabel">Email Plan</span></span>
       <div class="plan-bar-actions">
         <button type="button" id="importPlanBtn" class="plan-btn" data-i18n="importPlan">Import Plan</button>
@@ -35,9 +43,9 @@
     </section>
 
     <!-- Card 1: Recipients -->
-    <section class="card">
+    <section class="card" data-step="1">
       <div class="card-title">
-        <span><span class="card-title-icon">📊</span><span data-i18n="cardRecipients">1. Recipients</span></span>
+        <span><span class="card-title-icon">📊</span><span data-i18n="cardRecipients">Recipients</span></span>
         <div id="csvSummary" class="csv-summary hidden"></div>
       </div>
 
@@ -53,7 +61,8 @@
       <!-- Column picker shown after opening an Excel file -->
       <div id="mappingPanel" class="mapping-panel hidden"></div>
 
-      <div style="margin-top: 8px;">
+      <div class="card-links">
+        <button type="button" id="tryDemoBtn" class="text-toggle-btn" data-i18n="tryDemo">New here? Try it with sample data</button>
         <button type="button" id="togglePasteCsvBtn" class="text-toggle-btn" data-i18n="togglePasteCsv">Or paste / view raw CSV text</button>
       </div>
 
@@ -64,9 +73,9 @@
     </section>
 
     <!-- Card 2: Email Template -->
-    <section class="card">
+    <section class="card" data-step="2">
       <div class="card-title">
-        <span><span class="card-title-icon">✍️</span><span data-i18n="cardTemplate">2. Email Template</span></span>
+        <span><span class="card-title-icon">✍️</span><span data-i18n="cardTemplate">Email Template</span></span>
       </div>
 
       <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
@@ -83,9 +92,12 @@
         <div class="variable-panel-header" data-i18n="variablePanelHeader">Click to insert variable</div>
         <div id="variableButtons" class="variable-buttons" data-i18n-empty="variablesEmpty" data-empty="Load a recipient list to see its columns here."></div>
       </div>
+      <p class="hint" data-i18n="fallbackHint">Tip: type {{ to pick a column. {{FirstName|there}} writes "there" when the first name is empty.</p>
 
       <label for="subject" data-i18n="subjectLabel">Subject</label>
       <input id="subject" type="text" value="Reminder for {{Course}}" />
+      <!-- Column suggestions; moved under whichever field is being typed in -->
+      <div id="variableSuggest" class="variable-suggest hidden" role="listbox"></div>
 
       <div>
         <button type="button" id="toggleCcBccBtn" class="collapsible-trigger">+ Add CC / BCC</button>
@@ -102,12 +114,13 @@
 
       <label for="body" data-i18n="bodyLabel">Body</label>
       <textarea id="body">Hi {{Name}},&#10;&#10;This is a quick reminder about {{Course}}.</textarea>
+      <p id="templateWarnings" class="template-warnings hidden" role="status"></p>
     </section>
 
     <!-- Card 3: Settings -->
-    <section class="card">
+    <section class="card" data-step="4">
       <div class="card-title">
-        <span><span class="card-title-icon">⚙️</span><span data-i18n="cardSettings">3. Compose Settings</span></span>
+        <span><span class="card-title-icon">⚙️</span><span data-i18n="cardSettings">Compose Settings</span></span>
       </div>
 
       <label data-i18n="serviceModeLabel">Service Mode</label>
@@ -152,8 +165,8 @@
       </div>
     </section>
 
-    <!-- Action Buttons -->
-    <div class="row">
+    <!-- Action Buttons (Generate is replaced by the Next button in step-by-step mode) -->
+    <div class="row" data-step="1">
       <button id="loadBtn" type="button" data-i18n="generate">Generate Drafts</button>
       <button id="clearStateBtn" type="button" data-i18n="clearData">Clear Data</button>
     </div>
@@ -166,19 +179,19 @@
     </div>
 
     <!-- Recipient review notes (do not block sending) -->
-    <section id="reviewPanel" class="review-panel hidden"></section>
+    <section id="reviewPanel" class="review-panel hidden" data-step="3"></section>
 
     <!-- Preview Controls & Card -->
-    <div class="hidden preview-controls" id="previewControls">
+    <div class="hidden preview-controls" id="previewControls" data-step="3">
       <button id="previewPrevBtn" type="button" data-i18n="previous">◀ Previous</button>
       <span id="previewCounter"></span>
       <button id="previewNextBtn" type="button" data-i18n="next">Next ▶</button>
     </div>
 
-    <section id="preview"></section>
+    <section id="preview" data-step="3"></section>
 
     <!-- Send Controls -->
-    <section class="hidden" id="sendControls">
+    <section class="hidden" id="sendControls" data-step="4">
       <div class="send-box">
         <label for="testEmail" class="send-box-title" data-i18n="testEmailLabel">Send yourself a test first</label>
         <div class="inline-row">
@@ -215,7 +228,15 @@
       </details>
     </section>
 
+    <!-- Back / Next, shown in step-by-step mode -->
+    <div class="wizard-nav wizard-only">
+      <button type="button" id="wizardBack" data-i18n="wizardBack">← Back</button>
+      <button type="button" id="wizardNext">Next: write the email →</button>
+    </div>
+    <p id="wizardHint" class="hint wizard-only"></p>
+
     <div class="footer-note">
+      <button type="button" id="wizardToggle" class="text-toggle-btn">Show all steps on one page</button>
       <div data-i18n="footerNote">🔒 100% local: your data never leaves your browser.</div>
       <a id="helpLink" href="https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension/issues" target="_blank" rel="noopener" data-i18n="helpLink">Questions or problems? Ask on GitHub</a>
     </div>

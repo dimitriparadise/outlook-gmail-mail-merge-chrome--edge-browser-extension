@@ -4,14 +4,17 @@
 
 Mail Merge Draft Helper is a Chrome / Edge extension that turns an Excel or CSV list into personalized Outlook Web or Gmail emails. It is built for instructors, administrators, and small teams who send many similar messages but still want to review them before they go out.
 
-Everything runs locally in the extension popup: load a list, write one template with variables such as `{{First Name}}`, check the flagged recipients, send yourself a test, then open or send the emails in batches.
+Everything runs locally in the extension popup, which walks you through four steps: load a list, write one template with variables such as `{{First Name}}`, check the flagged recipients, then send yourself a test and open or send the emails in batches.
 
 <p align="center"><img src="docs/images/02-popup-overview.png" alt="The extension popup" width="360"></p>
 
 **Highlights**
 
+- **One step at a time:** Recipients → Email → Review → Send, with Back / Next buttons (or everything on one page, if you prefer).
+- **Try it with sample data** in one click, without touching a real list.
 - Load an **Excel (.xlsx)** or CSV file, and choose which columns to use. Grades, IDs, and other columns stay out unless you tick them.
-- **Review notes** point out names that may not match the email address, unusual email domains, and empty fields, and let you fix them in place.
+- Type **`{{`** to pick a column, and give variables a default: `{{First Name|there}}`. Misspelled variables are flagged as you type.
+- **Review notes** point out names that may not match the email address, unusual email domains, repeated addresses, and empty fields, and let you fix them in place.
 - **Send yourself a test** before anything goes to the list.
 - **Send in batches** (50 per batch by default) with a progress counter that is remembered.
 - **Email plans:** save or load the list, template, and settings as one file.
@@ -61,11 +64,15 @@ A new version appears on [GitHub Releases](https://github.com/dimitriparadise/ou
 
 ## Step-by-step tutorial
 
-The popup has three numbered cards (recipients, template, settings), then **Generate Drafts**, the review notes and preview, and finally the sending tools. You can try every step with the files in [`examples/`](examples/).
+The popup walks you through four steps. The step bar at the top shows where you are; **Next** moves on once the current step is done, and **Back** (or clicking an earlier step) goes back. Prefer to see everything at once? Click **Show all steps on one page** at the bottom of the popup; in that view, **Generate Drafts** takes the place of the Next buttons.
 
-### Step 1 — Load your recipient list
+![The step bar: Recipients, Email, Review, Send](docs/images/02-step-bar.png)
 
-Click the drop zone in **1. Recipients** and choose a file, or drag it onto the drop zone. Excel (`.xlsx`) and CSV both work.
+You can try every step with the files in [`examples/`](examples/), or click **New here? Try it with sample data** to load a made-up list and template and jump straight to the Review step. Nothing is sent unless you open drafts and click Send yourself.
+
+### Step 1 — Recipients
+
+Click the drop zone in **Recipients** and choose a file, or drag it onto the drop zone. Excel (`.xlsx`) and CSV both work.
 
 **Excel files** open a column picker:
 
@@ -76,7 +83,7 @@ Click the drop zone in **1. Recipients** and choose a file, or drag it onto the 
 
 ![Choosing columns from an Excel file](docs/images/03-excel-columns.png)
 
-The badge then shows how many recipients were loaded. Rows without an email address are skipped.
+The badge then shows how many recipients were loaded (rows without an email address are skipped), and **Next: write the email** becomes available.
 
 ![Recipients loaded from Excel](docs/images/03-excel-loaded.png)
 
@@ -84,18 +91,46 @@ The badge then shows how many recipients were loaded. Rows without an email addr
 
 > Already have everything prepared? Use **Import Plan** to load the list, subject, body, and settings in one go. See [Email plans](#email-plans-import--export).
 
-### Step 2 — Write the template
+### Step 2 — Email
 
-In **2. Email Template**, write the subject and body. The **Click to insert variable** panel has one button per column; click it to insert that variable where your cursor is. Each `{{Variable}}` is replaced with the value from that recipient's row.
+Write the subject and body. Each `{{Variable}}` is replaced with the value from that recipient's row.
 
-![Template card with variable buttons](docs/images/05-template.png)
+- **Type `{{`** to see the list of columns, then pick one with the arrow keys and Enter (or click it). The **Click to insert variable** buttons above the subject do the same.
+
+![Column suggestions after typing {{](docs/images/05-autocomplete.png)
+
+- **Give a variable a default** with `|`: `Hi {{First Name|there}},` becomes "Hi there," for anyone whose first name is empty.
+- **Misspelled variables are flagged as you type**, with the closest column suggested:
+
+![A misspelled variable flagged with a suggestion](docs/images/05-warning.png)
 
 - Use **+ Add CC / BCC** for copy recipients. These fields accept variables too, such as `{{CcEmail}}`.
 - The body is plain text: line breaks are kept, but there is no bold, color, or images.
 
-### Step 3 — Choose the mail service and batch size
+![Template card with variable buttons](docs/images/05-template.png)
 
-In **3. Compose Settings**:
+Click **Next: generate and review**. The extension builds one message per recipient. If something blocks sending (for example an unknown variable or an invalid address), you stay on this step and a red message explains what to fix.
+
+### Step 3 — Review
+
+**Review notes** (yellow box) list recipients worth a quick look. They never block sending:
+
+- a first name that may not match the email address (for example "Bob" for `robert.smith@...`);
+- an email domain that differs from most of the list (for example one `gmail.com` among school addresses);
+- an address that appears on several rows and will get several emails (fine for one parent of two students);
+- an empty value for a variable the template uses without a default.
+
+Type a correction in the box to update that recipient right away, or click **It's fine** to hide the note.
+
+![Review notes after generating](docs/images/07-review.png)
+
+Then use **◀ Previous / Next ▶** to read a few personalized messages, and click **Next: send**.
+
+![Preview with Previous / Next controls](docs/images/07-preview.png)
+
+### Step 4 — Send
+
+First check the settings:
 
 - **Service Mode:** `Outlook Web` (outlook.office.com, work or school accounts) or `Gmail`.
 - **Batch Opening Speed:** the pause between drafts. Use `2.0s (Safe / Large)` for long lists.
@@ -104,36 +139,16 @@ In **3. Compose Settings**:
 
 ![Compose settings card](docs/images/06-settings.png)
 
-### Step 4 — Generate, review, and preview
-
-Click **Generate Drafts**. The extension builds one message per recipient.
-
-**Review notes** (yellow box) list recipients worth a quick look. They never block sending:
-
-- a first name that may not match the email address (for example "Bob" for `robert.smith@...`);
-- an email domain that differs from most of the list (for example one `gmail.com` among school addresses);
-- an empty value for a variable the template uses.
-
-Type a correction in the box to update that recipient right away, or click **It's fine** to hide the note.
-
-![Review notes after generating](docs/images/07-review.png)
-
-Then use **◀ Previous / Next ▶** to read a few personalized messages.
-
-![Preview with Previous / Next controls](docs/images/07-preview.png)
-
-Red **preflight warnings** do block sending until fixed: an unknown variable such as `{{Coursee}}`, an invalid or duplicate email address, or the same address in To and CC.
-
-### Step 5 — Send yourself a test, then send in batches
+Then:
 
 1. **Send yourself a test first:** enter your own email address and click **Open Test Draft to Me**. It uses the message shown in the preview, sends it only to you, and adds `[TEST]` to the subject. Your list and progress do not change.
 2. **Send in batches:** click **Open Batch 1 of N**. Each draft opens in its own background tab, ready to review and send. The counter (for example `50 of 168 opened`) and the button move on to the next batch, and the popup remembers where you are even after it is closed.
 
 ![Test send and batch sending](docs/images/08-send.png)
 
-- Changing the template and clicking **Generate Drafts** again keeps your progress, so a batch is never opened twice by accident.
+- Going back to change the template and generating again keeps your progress, so a batch is never opened twice by accident.
 - Loading a new list, or editing the list by hand, starts the count over. **Reset progress** starts over on purpose.
-- **More options** opens a single draft, or any From / To range.
+- **More options** opens a single draft, or any From / To range. The batch button always picks up the drafts that have not been opened yet.
 
 ## Email plans (import / export)
 
@@ -141,7 +156,7 @@ An email plan is one `.json` file that sets up the whole popup at once: the reci
 
 ![Import Plan and Export Plan buttons](docs/images/04-import-plan-bar.png)
 
-- **Import Plan** (or dropping a `.json` file on the drop zone) fills every field and loads the recipients. Then review the template and click **Generate Drafts**.
+- **Import Plan** (or dropping a `.json` file on the drop zone) fills every field and loads the recipients. Then check the email and continue.
 - **Export Plan** saves the current setup as `mail-merge-plan-YYYY-MM-DD.json`. The file contains your recipient list, so store it privately.
 - Auto-Send is never saved in a plan and is always switched off after an import.
 
@@ -189,7 +204,7 @@ Use the menu in the top-right corner of the popup to switch between **English**,
 - **Always send yourself a test first**, especially before using Auto-Send.
 - **Use `2.0s (Safe / Large)` speed** so the browser and Outlook keep up.
 - **Only load the columns the email needs.** The Excel column picker leaves everything else out.
-- **Read the review notes**: they catch nicknames, personal addresses, and missing names before the email goes out.
+- **Read the review notes**: they catch nicknames, personal addresses, repeated addresses, and missing names before the email goes out.
 
 ## Excel and CSV format
 
@@ -212,6 +227,7 @@ CC:       {{CcEmail}}
 - **Excel:** `.xlsx` files are read directly; the first non-empty row is used as the header. Cells keep the value Excel saved (formulas are not recalculated, and dates appear as Excel date numbers, so format dates as text if the email needs them). Old `.xls` files are not supported: save them as `.xlsx` or CSV UTF-8.
 - **CSV:** values that contain commas or line breaks must be wrapped in double quotes. When saving from Excel, choose **CSV UTF-8** so non-English names are kept intact.
 - Variable names are case-sensitive and must match the header exactly, including spaces: a column named `First Name` is used as `{{First Name}}`.
+- Add a default after `|` for values that may be empty: `{{First Name|there}}`.
 
 ## Troubleshooting
 
@@ -220,7 +236,9 @@ CC:       {{CcEmail}}
 | "Old .xls files are not supported" | In Excel, use **File → Save As** and choose `.xlsx` or **CSV UTF-8**. |
 | "Could not read this Excel file" | Open it in Excel and save it again as `.xlsx`. Password-protected files cannot be read. |
 | "CSV needs a header row and at least one data row" | Make sure the first line is the header and each recipient is on its own line. |
-| Preflight warning "Unknown template variable" | The variable name does not match a column header exactly (spelling, capitals, and spaces). |
+| **Next** is greyed out on the first step | Load a recipient list first. If the Excel column picker is open, click **Use These Columns**. |
+| "Not in your list: {{...}}" under the template | The variable name does not match a column header exactly (spelling, capitals, and spaces). Use the suggested name, or type `{{` and pick from the list. |
+| "Hi ," with a missing name | Add a default: `{{First Name|there}}`. |
 | A name looks wrong in the preview | Fix it in the review notes, or in the original file and load it again. |
 | Outlook opens but the To / Subject is empty | Make sure you are signed in to Outlook Web in the same browser profile, then open the draft again. |
 | Auto-Send did not click Send | Reload the extension in `chrome://extensions`, check the language of the Send button, and see [Auto-Send](#auto-send-experimental). |
