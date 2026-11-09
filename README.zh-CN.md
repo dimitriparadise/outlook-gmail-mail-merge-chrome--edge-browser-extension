@@ -23,7 +23,17 @@ Mail Merge Draft Helper 是一个轻量的 Chrome / Edge 扩展，可以把一�
 
 ## 安装
 
-扩展还没有上架 Chrome 应用商店，所以要以"未打包扩展"的方式安装，大约一分钟。
+### 从 Chrome 应用商店安装（推荐）
+
+打开 [Chrome 应用商店里的 Mail Merge Draft Helper](https://chromewebstore.google.com/detail/mail-merge-draft-helper/dgfmchmfppcdjaacmdfmmgldbjldihpf)，点击 **添加至 Chrome（Add to Chrome）**。之后 Chrome 会自动更新。
+
+Microsoft Edge 也可以从同一个页面安装：Edge 提示时选择 **允许来自其他应用商店的扩展**，再点 **获取**。
+
+装好后点击工具栏上的拼图图标，把 **Mail Merge Draft Helper** 固定（📌）在工具栏上，方便一键打开。
+
+### 从 GitHub 安装（最新版本）
+
+新版本会先发布在 [GitHub Releases](https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension/releases)，通过 Chrome 应用商店审核后才会出现在商店里。想马上用最新版，可以用"未打包扩展"的方式安装，大约一分钟。如果已经装了商店版，请先移除，避免两份同时运行。
 
 1. 打开 [最新版本（Releases）](https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension/releases/latest)，下载 `mail-merge-draft-helper-<版本号>.zip`。
 2. 解压到一个会长期保留的文件夹，比如 `Documents/mail-merge-draft-helper`。之后不要删掉这个文件夹，Chrome 是从这里加载扩展的。
