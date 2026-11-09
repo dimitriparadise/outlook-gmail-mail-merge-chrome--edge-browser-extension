@@ -7,6 +7,7 @@ import { makeXlsx } from './xlsx-fixture.mjs';
 function createElement(id, initial = {}) {
   const listeners = new Map();
   const classes = new Set(initial.classes || []);
+  const attributes = new Map();
   return {
     id,
     value: initial.value ?? '',
@@ -19,8 +20,9 @@ function createElement(id, initial = {}) {
     disabled: false,
     style: {},
     dataset: {},
-    setAttribute() {},
-    removeAttribute() {},
+    setAttribute(name, value) { attributes.set(name, String(value)); },
+    getAttribute(name) { return attributes.has(name) ? attributes.get(name) : null; },
+    removeAttribute(name) { attributes.delete(name); },
     classList: {
       add(name) { classes.add(name); },
       remove(name) { classes.delete(name); },
@@ -986,7 +988,8 @@ test('sample data loads a made-up list, builds drafts, and opens the review step
   assert.equal(openedTabs.length, 0);
   assert.match(elements.get('status').textContent, /^Sample data loaded: 7 made-up recipients/);
   assert.match(generated[3].body, /^Hi there,/);
-  assert.ok(rows.every(row => /@example\.edu$|@gmail\.com$/.test(row.Email)));
+  // Only reserved example domains, so a sample draft can never reach a real mailbox.
+  assert.ok(rows.every(row => /@example\.(edu|net)$/.test(row.Email)));
   assert.match(elements.get('reviewPanel').innerHTML, /4 recipients worth a quick look/);
 });
 
@@ -1054,4 +1057,109 @@ test('step-by-step mode can be switched off, and the choice is remembered', asyn
   const reopened = loadPopup(stored);
   await reopened.api.restoreState();
   assert.equal(reopened.elements.get('app').classList.contains('wizard'), false);
+});
+
+// --- PR #5 review fixes ---
+
+test('a pasted list can move on to the Email step, and a broken one stays on step 1', async () => {
+  const { elements, api } = loadPopup();
+  const next = elements.get('wizardNext');
+  const csvText = elements.get('csvText');
+
+  csvText.value = 'Name,Email Course';
+  await csvText.dispatchEvent({ type: 'input' });
+  assert.equal(next.disabled, false);
+  await next.click();
+  assert.equal(elements.get('app').dataset.currentStep, '1');
+  assert.equal(elements.get('status').className, 'error');
+
+  csvText.value = FIVE;
+  await csvText.dispatchEvent({ type: 'input' });
+  await next.click();
+  assert.equal(elements.get('app').dataset.currentStep, '2');
+  assert.equal(api.state().rows.length, 5);
+});
+
+test('Review and Send unlock only after drafts were generated without blocking problems', async () => {
+  const { elements } = loadPopup();
+  await api_load(elements);
+  const body = elements.get('body');
+
+  // Typing in the template builds messages for the live preview, but must not unlock later steps.
+  body.value = 'Hi {{Name}}';
+  await body.dispatchEvent({ type: 'input' });
+  assert.equal(elements.get('stepTab3').disabled, true);
+  assert.equal(elements.get('stepTab4').disabled, true);
+
+  elements.get('subject').value = 'About {{Nmae}}';
+  await elements.get('wizardNext').click();
+  assert.equal(elements.get('app').dataset.currentStep, '2');
+  assert.equal(elements.get('stepTab3').disabled, true);
+  await elements.get('stepTab4').click();
+  assert.equal(elements.get('app').dataset.currentStep, '2');
+
+  elements.get('subject').value = 'About {{Name}}';
+  await elements.get('wizardNext').click();
+  assert.equal(elements.get('app').dataset.currentStep, '3');
+  assert.equal(elements.get('stepTab4').disabled, false);
+});
+
+async function api_load(elements) {
+  elements.get('csvText').value = FIVE;
+  await elements.get('csvText').dispatchEvent({ type: 'input' });
+  await elements.get('wizardNext').click();
+  assert.equal(elements.get('app').dataset.currentStep, '2');
+}
+
+test('a suggestion is not inserted once the caret has left the unfinished {{', async () => {
+  const { elements } = loadPopup();
+  await api_load(elements);
+  const body = elements.get('body');
+  let caret = null;
+  Object.defineProperty(body, 'selectionStart', { get() { return caret ?? this.value.length; } });
+
+  body.value = 'Hello {{Na';
+  await body.dispatchEvent({ type: 'input' });
+  assert.equal(elements.get('variableSuggest').classList.contains('hidden'), false);
+
+  caret = 0; // Home
+  await body.dispatchEvent({ type: 'keydown', key: 'Enter', preventDefault() {} });
+  assert.equal(body.value, 'Hello {{Na');
+  assert.equal(elements.get('variableSuggest').classList.contains('hidden'), true);
+});
+
+test('suggestion keys are left to the input method while composing', async () => {
+  const { elements } = loadPopup();
+  await api_load(elements);
+  const body = elements.get('body');
+  body.value = 'Hi {{Na';
+  await body.dispatchEvent({ type: 'input' });
+
+  let prevented = false;
+  await body.dispatchEvent({ type: 'keydown', key: 'Enter', isComposing: true, preventDefault() { prevented = true; } });
+
+  assert.equal(prevented, false);
+  assert.equal(body.value, 'Hi {{Na');
+  assert.equal(elements.get('variableSuggest').classList.contains('hidden'), false);
+});
+
+test('the field tells screen readers which suggestion is active', async () => {
+  const { elements } = loadPopup();
+  await api_load(elements);
+  const body = elements.get('body');
+  assert.equal(body.getAttribute('aria-controls'), 'variableSuggest');
+  assert.equal(body.getAttribute('aria-expanded'), 'false');
+
+  body.value = 'Hi {{';
+  await body.dispatchEvent({ type: 'input' });
+  assert.equal(body.getAttribute('aria-expanded'), 'true');
+  assert.equal(body.getAttribute('aria-activedescendant'), 'variableSuggest-0');
+  assert.match(elements.get('variableSuggest').innerHTML, /id="variableSuggest-1"/);
+
+  await body.dispatchEvent({ type: 'keydown', key: 'ArrowDown', preventDefault() {} });
+  assert.equal(body.getAttribute('aria-activedescendant'), 'variableSuggest-1');
+
+  await body.dispatchEvent({ type: 'keydown', key: 'Escape', preventDefault() {} });
+  assert.equal(body.getAttribute('aria-expanded'), 'false');
+  assert.equal(body.getAttribute('aria-activedescendant'), null);
 });

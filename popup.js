@@ -18,6 +18,8 @@ let mapping = null;
 // Step-by-step mode: which step is shown, and whether the mode is on (otherwise everything is on one page).
 let wizardStep = 1;
 let wizardOn = true;
+// True after Generate succeeded without blocking problems; Review and Send unlock only then.
+let draftsReady = false;
 
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'outlookMailMergeState';
@@ -350,6 +352,7 @@ async function saveState() {
     listEdited,
     wizardStep,
     wizardOn,
+    draftsReady,
     hasStarted: generated.length > 0,
     updatedAt: Date.now()
   };
@@ -433,6 +436,7 @@ async function restoreState() {
   listEdited = Boolean(state.listEdited);
   wizardOn = state.wizardOn !== false;
   wizardStep = Number.isInteger(state.wizardStep) ? state.wizardStep : 1;
+  draftsReady = hasOwn(state, 'draftsReady') ? Boolean(state.draftsReady) : generated.length > 0;
 
   if ($('cc')?.value || $('bcc')?.value) {
     updateCcBccVisibility(true);
@@ -456,6 +460,7 @@ async function restoreState() {
 
 function resetProgress() {
   generated = [];
+  draftsReady = false;
   openedRows = new Set();
   previewIndex = 0;
   lastBatch = null;
@@ -668,15 +673,24 @@ function applySuggestion(text, start, cursor, header) {
 let suggest = null;
 
 function closeSuggestions() {
+  const field = suggest && $(suggest.fieldId);
   suggest = null;
   if ($('variableSuggest')) $('variableSuggest').classList.add('hidden');
+  if (field) {
+    field.setAttribute('aria-expanded', 'false');
+    field.removeAttribute('aria-activedescendant');
+  }
 }
 
 function renderSuggestions() {
   const box = $('variableSuggest');
   if (!box || !suggest) return;
-  box.innerHTML = suggest.items.map((header, i) => `<div class="variable-suggest-item${i === suggest.active ? ' active' : ''}" role="option" aria-selected="${i === suggest.active}" data-header="${escapeHtml(header)}">{{${escapeHtml(header)}}}</div>`).join('');
+  box.innerHTML = suggest.items.map((header, i) => `<div id="variableSuggest-${i}" class="variable-suggest-item${i === suggest.active ? ' active' : ''}" role="option" aria-selected="${i === suggest.active}" data-header="${escapeHtml(header)}">{{${escapeHtml(header)}}}</div>`).join('');
   box.classList.remove('hidden');
+  // Tell screen readers which option Enter / Tab will insert.
+  const field = $(suggest.fieldId);
+  field?.setAttribute('aria-expanded', 'true');
+  field?.setAttribute('aria-activedescendant', `variableSuggest-${suggest.active}`);
 }
 
 function updateSuggestions(field) {
@@ -694,7 +708,10 @@ function updateSuggestions(field) {
 function chooseSuggestion(header) {
   const field = suggest && $(suggest.fieldId);
   if (!field) return;
-  const result = applySuggestion(field.value, suggest.start, field.selectionStart ?? field.value.length, header);
+  const cursor = field.selectionStart ?? field.value.length;
+  // The caret may have moved (Home, a click) since the list opened; only insert inside the same "{{...".
+  if (variableQueryAt(field.value, cursor)?.start !== suggest.start) return closeSuggestions();
+  const result = applySuggestion(field.value, suggest.start, cursor, header);
   closeSuggestions();
   field.value = result.text;
   field.focus();
@@ -755,7 +772,7 @@ const SAMPLE_CSV = [
   ',Turing,alan.turing@example.edu,ISOM 340',
   'Katherine,Johnson,katherine.johnson@example.edu,ISOM 210',
   'Katherine,Johnson,katherine.johnson@example.edu,ISOM 340',
-  'Margaret,Hamilton,margaret.hamilton@gmail.com,ISOM 210'
+  'Margaret,Hamilton,margaret.hamilton@example.net,ISOM 210'
 ].join('\n');
 
 async function loadSampleData() {
@@ -779,9 +796,14 @@ async function loadSampleData() {
 
 // Steps unlock in order: a list is needed for the email step, and drafts for review and send.
 function maxReachableStep() {
-  if (generated.length) return 4;
+  if (draftsReady && generated.length) return 4;
   if (rows.length && !mapping) return 2;
   return 1;
+}
+
+// A pasted list counts as something to move on with; it is parsed when Next is clicked.
+function hasListToContinue() {
+  return !mapping && (rows.length > 0 || getCsvText() !== '');
 }
 
 function renderWizard() {
@@ -805,9 +827,9 @@ function renderWizard() {
   if ($('wizardNext')) {
     $('wizardNext').classList.toggle('hidden', wizardStep === 4);
     $('wizardNext').textContent = t(`wizardNext${Math.min(wizardStep, 3)}`);
-    $('wizardNext').disabled = isOpening || (wizardStep === 1 && reachable < 2);
+    $('wizardNext').disabled = isOpening || (wizardStep === 1 && !hasListToContinue());
   }
-  if ($('wizardHint')) $('wizardHint').textContent = wizardStep === 1 && reachable < 2 ? t('wizardNeedList') : '';
+  if ($('wizardHint')) $('wizardHint').textContent = wizardStep === 1 && !hasListToContinue() ? t('wizardNeedList') : '';
   if ($('wizardToggle')) $('wizardToggle').textContent = wizardOn ? t('showAllSteps') : t('showStepByStep');
 }
 
@@ -1040,11 +1062,15 @@ async function generateDrafts(extraLines = []) {
     const lines = [...extraLines, tm('ready', { count: generated.length })];
     if (openedCount() > 0) lines.push(t('progressKept', { done: openedCount(), total: generated.length }));
     if (notes.length) lines.push(t('readyReviewNote', { count: notes.length }));
+    draftsReady = !issues.length;
     renderStatus(lines.join('\n') + renderPreflightIssues(issues), issues.length ? 'error' : 'ok');
     renderWizard();
-    return !issues.length;
+    await saveState();
+    return draftsReady;
   } catch (e) {
+    draftsReady = false;
     renderStatus(e.message, 'error');
+    renderWizard();
     return false;
   }
 }
@@ -1367,7 +1393,12 @@ TEMPLATE_FIELD_IDS.forEach(id => {
       renderTemplateWarnings();
       saveState();
     });
+    $(id).setAttribute('aria-autocomplete', 'list');
+    $(id).setAttribute('aria-controls', 'variableSuggest');
+    $(id).setAttribute('aria-expanded', 'false');
     $(id).addEventListener('keydown', (event) => {
+      // Leave Enter and arrow keys to the input method while a character is being composed.
+      if (event.isComposing || event.keyCode === 229) return;
       if (!suggest || suggest.fieldId !== id) return;
       const count = suggest.items.length;
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -1383,6 +1414,11 @@ TEMPLATE_FIELD_IDS.forEach(id => {
       }
     });
     $(id).addEventListener('blur', closeSuggestions);
+    // Moving the caret out of an unfinished "{{..." closes the list; moving back in reopens it.
+    $(id).addEventListener('click', () => updateSuggestions($(id)));
+    $(id).addEventListener('keyup', (event) => {
+      if (['ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) updateSuggestions($(id));
+    });
   }
 });
 
@@ -1589,6 +1625,7 @@ if ($('templatePreset')) {
 if ($('csvText')) {
   $('csvText').addEventListener('input', () => {
     listEdited = true;
+    renderWizard();
     saveState();
   });
 }
@@ -1727,6 +1764,15 @@ if ($('openRangeBtn')) {
 if ($('wizardNext')) {
   $('wizardNext').addEventListener('click', async () => {
     if (isOpening) return;
+    // A pasted or hand-edited list is parsed before moving on; a parse error keeps you on step 1.
+    if (wizardStep === 1 && (listEdited || !rows.length)) {
+      try {
+        await loadRows({ fresh: true });
+      } catch (e) {
+        renderStatus(e.message, 'error');
+        return;
+      }
+    }
     // Moving on from the email step builds the drafts; stay put if something blocks sending.
     if (wizardStep === 2) {
       if (await generateDrafts()) setWizardStep(3);
