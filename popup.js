@@ -15,6 +15,9 @@ let dismissedNotes = [];
 let listEdited = false;
 // Column picker state while an Excel file is being imported.
 let mapping = null;
+// Step-by-step mode: which step is shown, and whether the mode is on (otherwise everything is on one page).
+let wizardStep = 1;
+let wizardOn = true;
 
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'outlookMailMergeState';
@@ -138,17 +141,25 @@ function rowsToCSV(headers, rowList) {
     .join('\n');
 }
 
+// {{Name}} inserts a column value; {{Name|there}} uses "there" when that value is empty.
+const VARIABLE_PATTERN = /{{\s*([^}|]+?)\s*(?:\|([^}]*))?}}/g;
+
 function applyTemplate(template, row) {
-  return String(template || '').replace(/{{\s*([^}]+?)\s*}}/g, (_, key) => row[key] ?? row[key.trim()] ?? '');
+  return String(template || '').replace(VARIABLE_PATTERN, (_, key, fallback) => {
+    const value = String(row[key] ?? '');
+    return value.trim() !== '' || fallback === undefined ? value : fallback.trim();
+  });
 }
 
 function templateVariables(template) {
-  const variables = new Set();
-  String(template || '').replace(/{{\s*([^}]+?)\s*}}/g, (_, key) => {
-    variables.add(key.trim());
-    return '';
-  });
-  return [...variables];
+  return [...new Set([...String(template || '').matchAll(VARIABLE_PATTERN)].map(match => match[1].trim()))];
+}
+
+// Variables used at least once without a {{Name|default}}, so an empty value would show as a gap.
+function variablesWithoutDefault(templates) {
+  return new Set(templates.flatMap(template => [...String(template || '').matchAll(VARIABLE_PATTERN)]
+    .filter(match => match[2] === undefined)
+    .map(match => match[1].trim())));
 }
 
 function findMissingTemplateVariables(headers, templates) {
@@ -173,13 +184,11 @@ function isValidEmail(email) {
 
 function validateMessages(messages) {
   const issues = [];
-  const toCounts = new Map();
 
   messages.forEach((msg, index) => {
     const row = t('draftLabel', { n: index + 1 });
     const to = String(msg.email || '').trim();
     if (!isValidEmail(to)) issues.push(t('issueInvalidEmail', { row, email: to || t('blank') }));
-    if (to) toCounts.set(to.toLowerCase(), (toCounts.get(to.toLowerCase()) || 0) + 1);
 
     const copyRecipients = [...splitRecipients(msg.cc), ...splitRecipients(msg.bcc)];
     copyRecipients.forEach(recipient => {
@@ -190,10 +199,7 @@ function validateMessages(messages) {
     });
   });
 
-  toCounts.forEach((count, email) => {
-    if (count > 1) issues.push(t('issueDuplicate', { email }));
-  });
-
+  // The same address on several rows is allowed (e.g. one parent of two students); see reviewRecipients.
   return issues;
 }
 
@@ -216,10 +222,13 @@ function asciiLetters(text) {
 
 function reviewRecipients(rowList, headers, templates) {
   const used = new Set(templates.flatMap(templateVariables));
+  const needsValue = variablesWithoutDefault(templates);
   const emailHeader = detectEmailHeader(headers) || 'Email';
   const nameHeader = findFirstNameHeader(headers);
   const isGivenName = nameHeader && !/^(name|姓名|full[\s_-]*name)$/i.test(nameHeader.trim());
   const emails = rowList.map(row => String(row.Email || row.email || '').trim());
+  const emailCounts = new Map();
+  emails.forEach(email => email && emailCounts.set(email.toLowerCase(), (emailCounts.get(email.toLowerCase()) || 0) + 1));
 
   const domainCounts = new Map();
   emails.map(emailDomain).forEach(domain => domain && domainCounts.set(domain, (domainCounts.get(domain) || 0) + 1));
@@ -248,9 +257,11 @@ function reviewRecipients(rowList, headers, templates) {
       message
     });
 
-    used.forEach(variable => {
+    needsValue.forEach(variable => {
       if (headers.includes(variable) && String(row[variable] ?? '').trim() === '') add('empty', variable, t('noteEmpty', { name: variable }));
     });
+    const copies = emailCounts.get(email.toLowerCase()) || 0;
+    if (copies > 1) add('duplicate', emailHeader, t('noteDuplicate', { count: copies }));
     if (nameHeader && checkNames && mismatched[index]) {
       add('mismatch', nameHeader, t('noteNameMismatch', { name: nameHeader }));
     } else if (isGivenName && used.has(nameHeader) && /\s/.test(String(row[nameHeader] ?? '').trim())) {
@@ -337,6 +348,8 @@ async function saveState() {
     lastBatch,
     dismissedNotes,
     listEdited,
+    wizardStep,
+    wizardOn,
     hasStarted: generated.length > 0,
     updatedAt: Date.now()
   };
@@ -378,6 +391,7 @@ function applyLanguageSelection(lang) {
 
 // Re-renders every piece of text that JavaScript writes, e.g. after the language changes.
 function renderDynamicText() {
+  renderWizard();
   syncDraftActionLabels();
   renderComposeModeHints();
   renderCcBccToggle();
@@ -417,6 +431,8 @@ async function restoreState() {
   lastBatch = state.lastBatch || null;
   dismissedNotes = Array.isArray(state.dismissedNotes) ? state.dismissedNotes : [];
   listEdited = Boolean(state.listEdited);
+  wizardOn = state.wizardOn !== false;
+  wizardStep = Number.isInteger(state.wizardStep) ? state.wizardStep : 1;
 
   if ($('cc')?.value || $('bcc')?.value) {
     updateCcBccVisibility(true);
@@ -435,6 +451,7 @@ async function restoreState() {
     renderPreview();
     renderReviewPanel();
   }
+  renderWizard();
 }
 
 function resetProgress() {
@@ -460,6 +477,7 @@ async function loadRows({ fresh = false } = {}) {
   }
   renderVariableButtons();
   updateCsvSummary();
+  renderWizard();
   await saveState();
   return rows;
 }
@@ -623,6 +641,183 @@ function insertAtCursor(field, text) {
   field.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+// --- Column suggestions while typing {{ ---
+
+// Returns { start, query } when the text just before the cursor is an unfinished "{{...".
+function variableQueryAt(text, cursor) {
+  const match = /{{\s*([^{}|]*)$/.exec(String(text).slice(0, cursor));
+  return match ? { start: match.index, query: match[1] } : null;
+}
+
+function variableSuggestions(headers, query) {
+  const needle = String(query).trim().toLowerCase();
+  return headers.filter(Boolean).filter(header => header.toLowerCase().includes(needle)).slice(0, 8);
+}
+
+// Replaces the unfinished "{{que" with "{{Header}}", absorbing the rest of a variable already closed after the cursor.
+function applySuggestion(text, start, cursor, header) {
+  const after = text.slice(cursor);
+  const tail = /^[^{}\n]*}}/.exec(after);
+  const insert = `{{${header}}}`;
+  return {
+    text: text.slice(0, start) + insert + (tail ? after.slice(tail[0].length) : after),
+    cursor: start + insert.length
+  };
+}
+
+let suggest = null;
+
+function closeSuggestions() {
+  suggest = null;
+  if ($('variableSuggest')) $('variableSuggest').classList.add('hidden');
+}
+
+function renderSuggestions() {
+  const box = $('variableSuggest');
+  if (!box || !suggest) return;
+  box.innerHTML = suggest.items.map((header, i) => `<div class="variable-suggest-item${i === suggest.active ? ' active' : ''}" role="option" aria-selected="${i === suggest.active}" data-header="${escapeHtml(header)}">{{${escapeHtml(header)}}}</div>`).join('');
+  box.classList.remove('hidden');
+}
+
+function updateSuggestions(field) {
+  if (!field || !$('variableSuggest')) return;
+  const query = variableQueryAt(field.value, field.selectionStart ?? field.value.length);
+  const items = query ? variableSuggestions(csvHeaders, query.query) : [];
+  if (!items.length) return closeSuggestions();
+  const active = suggest?.fieldId === field.id ? Math.min(suggest.active, items.length - 1) : 0;
+  suggest = { fieldId: field.id, start: query.start, items, active };
+  // Show the list right under the field being typed in.
+  if ($('variableSuggest').previousElementSibling !== field) field.insertAdjacentElement?.('afterend', $('variableSuggest'));
+  renderSuggestions();
+}
+
+function chooseSuggestion(header) {
+  const field = suggest && $(suggest.fieldId);
+  if (!field) return;
+  const result = applySuggestion(field.value, suggest.start, field.selectionStart ?? field.value.length, header);
+  closeSuggestions();
+  field.value = result.text;
+  field.focus();
+  field.setSelectionRange(result.cursor, result.cursor);
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+// --- Live warnings for variables that are not in the list ---
+
+function normalizeName(name) {
+  return String(name).toLowerCase().replace(/[\s_-]+/g, '');
+}
+
+function editDistance(a, b) {
+  let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j++) {
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+function closestHeader(name, headers) {
+  const target = normalizeName(name);
+  let best = null;
+  let bestScore = Infinity;
+  headers.filter(Boolean).forEach(header => {
+    const score = editDistance(target, normalizeName(header));
+    if (score < bestScore) {
+      best = header;
+      bestScore = score;
+    }
+  });
+  return bestScore <= Math.max(1, Math.floor(target.length / 4)) ? best : null;
+}
+
+function renderTemplateWarnings() {
+  const box = $('templateWarnings');
+  if (!box) return;
+  const missing = csvHeaders.length ? findMissingTemplateVariables(csvHeaders, currentTemplates()) : [];
+  box.classList.toggle('hidden', !missing.length);
+  box.textContent = missing.map(name => {
+    const suggestion = closestHeader(name, csvHeaders);
+    return suggestion ? t('templateUnknownSuggest', { name, suggestion }) : t('templateUnknown', { name });
+  }).join('\n');
+}
+
+// --- Sample data for a first try ---
+
+const SAMPLE_CSV = [
+  'FirstName,LastName,Email,Course',
+  'Ada,Lovelace,ada.lovelace@example.edu,ISOM 210',
+  'Grace,Hopper,grace.hopper@example.edu,ISOM 340',
+  'Bob,Smith,robert.smith@example.edu,ISOM 210',
+  ',Turing,alan.turing@example.edu,ISOM 340',
+  'Katherine,Johnson,katherine.johnson@example.edu,ISOM 210',
+  'Katherine,Johnson,katherine.johnson@example.edu,ISOM 340',
+  'Margaret,Hamilton,margaret.hamilton@gmail.com,ISOM 210'
+].join('\n');
+
+async function loadSampleData() {
+  if (isOpening) return;
+  if (rows.length && typeof confirm === 'function' && !confirm(t('sampleConfirm'))) return;
+  await applyPlan({
+    name: '',
+    csv: SAMPLE_CSV,
+    subject: t('sampleSubject'),
+    cc: '',
+    bcc: '',
+    body: t('sampleBody'),
+    composeMode: $('composeMode')?.value === 'gmail' ? 'gmail' : 'outlook',
+    batchDelay: '2000',
+    batchSize: 3
+  });
+  if (await generateDrafts([t('sampleLoaded', { count: rows.length })])) setWizardStep(3);
+}
+
+// --- Step-by-step mode ---
+
+// Steps unlock in order: a list is needed for the email step, and drafts for review and send.
+function maxReachableStep() {
+  if (generated.length) return 4;
+  if (rows.length && !mapping) return 2;
+  return 1;
+}
+
+function renderWizard() {
+  const app = $('app');
+  if (!app) return;
+  const reachable = maxReachableStep();
+  wizardStep = Math.min(Math.max(1, wizardStep), reachable);
+  app.classList.toggle('wizard', wizardOn);
+  if (app.dataset) app.dataset.currentStep = String(wizardStep);
+
+  for (let n = 1; n <= 4; n++) {
+    const tab = $(`stepTab${n}`);
+    if (!tab) continue;
+    tab.classList.toggle('active', n === wizardStep);
+    tab.classList.toggle('done', n < wizardStep);
+    tab.disabled = n > reachable;
+    if (n === wizardStep) tab.setAttribute?.('aria-current', 'step');
+    else tab.removeAttribute?.('aria-current');
+  }
+  if ($('wizardBack')) $('wizardBack').classList.toggle('hidden', wizardStep === 1);
+  if ($('wizardNext')) {
+    $('wizardNext').classList.toggle('hidden', wizardStep === 4);
+    $('wizardNext').textContent = t(`wizardNext${Math.min(wizardStep, 3)}`);
+    $('wizardNext').disabled = isOpening || (wizardStep === 1 && reachable < 2);
+  }
+  if ($('wizardHint')) $('wizardHint').textContent = wizardStep === 1 && reachable < 2 ? t('wizardNeedList') : '';
+  if ($('wizardToggle')) $('wizardToggle').textContent = wizardOn ? t('showAllSteps') : t('showStepByStep');
+}
+
+function setWizardStep(step) {
+  wizardStep = step;
+  closeSuggestions();
+  renderWizard();
+  saveState();
+}
+
 function renderVariableButtons() {
   const container = $('variableButtons');
   if (!container) return;
@@ -639,6 +834,7 @@ function renderVariableButtons() {
     });
     container.appendChild(button);
   });
+  renderTemplateWarnings();
 }
 
 function renderPreview(title) {
@@ -680,6 +876,7 @@ function sleep(ms) {
 
 function setRangeOpening(opening) {
   isOpening = opening;
+  renderWizard();
   for (const id of ['openRangeBtn', 'openBatchBtn', 'openNextBtn', 'sendTestBtn']) {
     if ($(id)) $(id).disabled = opening;
   }
@@ -823,6 +1020,35 @@ async function openDraftRange(indices) {
   }
 }
 
+// Builds the drafts from the list and template. Returns true when there are no blocking problems.
+async function generateDrafts(extraLines = []) {
+  try {
+    const restart = listEdited;
+    await loadRows({ fresh: restart });
+    makeMessages();
+    const issues = runPreflight();
+    // Regenerating after a template edit keeps progress, so a batch is never opened twice.
+    previewIndex = clampPreviewIndex(previewIndex);
+    await saveState();
+    if ($('sendControls')) $('sendControls').classList.remove('hidden');
+    if ($('previewControls')) $('previewControls').classList.remove('hidden');
+    syncRangeInputs();
+    syncDraftActionLabels();
+    renderPreview(t('previewLoaded', { count: generated.length }));
+    renderReviewPanel();
+    const notes = reviewRecipients(rows, csvHeaders, currentTemplates());
+    const lines = [...extraLines, tm('ready', { count: generated.length })];
+    if (openedCount() > 0) lines.push(t('progressKept', { done: openedCount(), total: generated.length }));
+    if (notes.length) lines.push(t('readyReviewNote', { count: notes.length }));
+    renderStatus(lines.join('\n') + renderPreflightIssues(issues), issues.length ? 'error' : 'ok');
+    renderWizard();
+    return !issues.length;
+  } catch (e) {
+    renderStatus(e.message, 'error');
+    return false;
+  }
+}
+
 // --- Test email to yourself ---
 
 function buildTestMessage(msg, testEmail) {
@@ -899,6 +1125,7 @@ function renderMappingPanel() {
   const panel = $('mappingPanel');
   if (!panel) return;
   updateCsvSummary();
+  renderWizard();
   if (!mapping) {
     panel.classList.add('hidden');
     panel.innerHTML = '';
@@ -1085,6 +1312,7 @@ async function applyPlan(plan) {
   renderMappingPanel();
   renderComposeModeHints();
   syncDraftActionLabels();
+  renderWizard();
   await saveState();
   return rows.length;
 }
@@ -1135,10 +1363,42 @@ TEMPLATE_FIELD_IDS.forEach(id => {
         makeMessages();
         renderPreview();
       }
+      updateSuggestions($(id));
+      renderTemplateWarnings();
       saveState();
     });
+    $(id).addEventListener('keydown', (event) => {
+      if (!suggest || suggest.fieldId !== id) return;
+      const count = suggest.items.length;
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        suggest.active = (suggest.active + (event.key === 'ArrowDown' ? 1 : -1) + count) % count;
+        renderSuggestions();
+      } else if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        chooseSuggestion(suggest.items[suggest.active]);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        closeSuggestions();
+      }
+    });
+    $(id).addEventListener('blur', closeSuggestions);
   }
 });
+
+if ($('variableSuggest')) {
+  // mousedown (not click) so the field keeps focus while a suggestion is picked.
+  $('variableSuggest').addEventListener('mousedown', (event) => {
+    const header = event.target?.closest?.('[data-header]')?.dataset.header ?? event.target?.dataset?.header;
+    if (!header) return;
+    event.preventDefault();
+    chooseSuggestion(header);
+  });
+}
+
+if ($('tryDemoBtn')) {
+  $('tryDemoBtn').addEventListener('click', () => loadSampleData());
+}
 
 if ($('uiLanguage')) {
   $('uiLanguage').addEventListener('change', async () => {
@@ -1321,6 +1581,7 @@ if ($('templatePreset')) {
       makeMessages();
       renderPreview();
     }
+    renderTemplateWarnings();
     saveState();
   });
 }
@@ -1361,6 +1622,8 @@ if ($('clearStateBtn')) {
     renderMappingPanel();
     renderComposeModeHints();
     syncDraftActionLabels();
+    wizardStep = 1;
+    renderWizard();
     renderStatus(t('cleared'), 'ok');
     // Keep the chosen language after clearing.
     await saveState();
@@ -1368,30 +1631,7 @@ if ($('clearStateBtn')) {
 }
 
 if ($('loadBtn')) {
-  $('loadBtn').addEventListener('click', async () => {
-    try {
-      const restart = listEdited;
-      await loadRows({ fresh: restart });
-      makeMessages();
-      const issues = runPreflight();
-      // Regenerating after a template edit keeps progress, so a batch is never opened twice.
-      previewIndex = clampPreviewIndex(previewIndex);
-      await saveState();
-      if ($('sendControls')) $('sendControls').classList.remove('hidden');
-      if ($('previewControls')) $('previewControls').classList.remove('hidden');
-      syncRangeInputs();
-      syncDraftActionLabels();
-      renderPreview(t('previewLoaded', { count: generated.length }));
-      renderReviewPanel();
-      const notes = reviewRecipients(rows, csvHeaders, currentTemplates());
-      const lines = [tm('ready', { count: generated.length })];
-      if (openedCount() > 0) lines.push(t('progressKept', { done: openedCount(), total: generated.length }));
-      if (notes.length) lines.push(t('readyReviewNote', { count: notes.length }));
-      renderStatus(lines.join('\n') + renderPreflightIssues(issues), issues.length ? 'error' : 'ok');
-    } catch (e) {
-      renderStatus(e.message, 'error');
-    }
-  });
+  $('loadBtn').addEventListener('click', () => generateDrafts());
 }
 
 if ($('previewPrevBtn')) {
@@ -1481,6 +1721,34 @@ if ($('openRangeBtn')) {
       return renderStatus(e.message, 'error');
     }
     await openDraftRange(Array.from({ length: range.endIndex - range.startIndex + 1 }, (_, k) => range.startIndex + k));
+  });
+}
+
+if ($('wizardNext')) {
+  $('wizardNext').addEventListener('click', async () => {
+    if (isOpening) return;
+    // Moving on from the email step builds the drafts; stay put if something blocks sending.
+    if (wizardStep === 2) {
+      if (await generateDrafts()) setWizardStep(3);
+      return;
+    }
+    setWizardStep(wizardStep + 1);
+  });
+}
+
+if ($('wizardBack')) {
+  $('wizardBack').addEventListener('click', () => setWizardStep(wizardStep - 1));
+}
+
+for (let n = 1; n <= 4; n++) {
+  if ($(`stepTab${n}`)) $(`stepTab${n}`).addEventListener('click', () => setWizardStep(n));
+}
+
+if ($('wizardToggle')) {
+  $('wizardToggle').addEventListener('click', () => {
+    wizardOn = !wizardOn;
+    renderWizard();
+    saveState();
   });
 }
 

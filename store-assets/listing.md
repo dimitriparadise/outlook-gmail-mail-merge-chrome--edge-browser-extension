@@ -16,7 +16,10 @@ Load an Excel or CSV list, write one reusable subject and body template, and use
 
 Key features:
 
+- A step-by-step flow (Recipients → Email → Review → Send), or everything on one page.
+- Try it with sample data in one click.
 - Load an Excel (.xlsx) or CSV list and choose which columns to use; everything else is left out.
+- Type {{ to insert a column, give variables a default ({{First Name|there}}), and see misspelled variables flagged as you type.
 - Generate personalized Gmail or Outlook Web drafts from each row.
 - Use any column header as a template variable.
 - Review notes flag names that may not match the email address, unusual email domains, and empty fields, with inline fixes.
