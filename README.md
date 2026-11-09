@@ -23,7 +23,17 @@ Everything runs locally in the extension popup. You load a recipient list, write
 
 ## Install
 
-The extension is not on the Chrome Web Store yet, so it is installed as an "unpacked" extension. This takes about a minute.
+### From the Chrome Web Store (recommended)
+
+Open [Mail Merge Draft Helper on the Chrome Web Store](https://chromewebstore.google.com/detail/mail-merge-draft-helper/dgfmchmfppcdjaacmdfmmgldbjldihpf) and click **Add to Chrome**. Chrome keeps it up to date automatically.
+
+Microsoft Edge can install it from the same page: when Edge asks, choose **Allow extensions from other stores**, then click **Get**.
+
+Then click the puzzle-piece icon in the toolbar and pin **Mail Merge Draft Helper** so it is one click away.
+
+### From GitHub (latest version)
+
+A new version appears on [GitHub Releases](https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension/releases) first and reaches the store after Chrome Web Store review. To use it right away, install it as an "unpacked" extension. This takes about a minute. If the store version is also installed, remove it first so the two copies do not both run.
 
 1. Open the [latest release](https://github.com/dimitriparadise/outlook-gmail-mail-merge-chrome--edge-browser-extension/releases/latest) and download `mail-merge-draft-helper-<version>.zip`.
 2. Unzip it into a folder you will keep (for example `Documents/mail-merge-draft-helper`). Do not delete this folder later: Chrome loads the extension from it.
