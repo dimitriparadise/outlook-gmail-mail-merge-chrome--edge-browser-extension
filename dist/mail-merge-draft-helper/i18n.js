@@ -424,7 +424,7 @@ const UI_STRINGS = {
     testEmailLabel: 'Primero envíate una prueba',
     testEmailPlaceholder: 'tu.correo@example.com',
     testEmailHint: 'Usa el borrador de la vista previa, dirigido a ti con "[TEST]" en el asunto. Tu lista y tu progreso no cambian.',
-    sendTest: 'Abrir borrador de prueba para mí',
+    sendTest: 'Abrir prueba para mí',
     sendTestSend: 'Enviarme una prueba',
     testEmailInvalid: 'Escribe tu propio correo para enviar una prueba.',
     testOpened: 'Se abrió una copia de prueba del borrador {n}, dirigida a {email}.',

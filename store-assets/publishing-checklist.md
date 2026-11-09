@@ -1,46 +1,48 @@
 # Chrome Web Store Publishing Checklist
 
-## Account
+## Before uploading
 
-- [ ] Create or sign in to a Chrome Web Store developer account.
-- [ ] Complete developer account registration and payment if required.
-- [ ] Confirm publisher name and contact information.
+- [ ] `node --test` passes.
+- [ ] `node --check popup.js && node --check content.js && node --check i18n.js && node --check xlsx.js`.
+- [ ] Version bumped in `manifest.json` and the badge in `popup.html` (and `store-assets/popup-screenshot-harness.html`).
+- [ ] `./scripts/build_release.sh` → `dist/mail-merge-draft-helper-<version>.zip`.
+- [ ] If the UI changed, regenerate images (see "Images" below).
+- [ ] GitHub release created with the same zip.
 
-## Extension Package
+## Package
 
-- [ ] Run `node --test`.
-- [ ] Run `node --check popup.js && node --check content.js`.
-- [ ] Generate store assets with `python3 scripts/generate_store_assets.py`.
-- [ ] Build the release zip.
-- [ ] Upload the zip in the Chrome Developer Dashboard.
+- [ ] Developer Dashboard → the item → **Package** → **Upload new package** → the zip.
 
-## Store Listing
+## Store listing (one per language)
 
-- [ ] Name: `Mail Merge Draft Helper`.
-- [ ] Short description from `store-assets/listing.md`.
-- [ ] Detailed description from `store-assets/listing.md`.
-- [ ] Category: Productivity.
-- [ ] Language: English.
-- [ ] Upload screenshots from `store-assets/screenshots/`.
-- [ ] Upload `store-assets/promo/small-promo-tile-440x280.png` if desired.
-- [ ] Add support URL.
-- [ ] Add website URL if available.
+Text and file paths are in [`listing.md`](listing.md).
 
-## Privacy
+- [ ] English (default): description, 5 screenshots from `screenshots/en/`, promo tile from `promo/en/`.
+- [ ] Add language **Chinese (Simplified)**: description, `screenshots/zh/`, `promo/zh/`.
+- [ ] Add language **Spanish**: description, `screenshots/es/`, `promo/es/`.
+- [ ] Name and summary come from `_locales/<lang>/messages.json` in the package; check they look right.
+- [ ] Category, homepage URL, support URL.
 
-- [ ] Host or publish the privacy policy in `store-assets/privacy-policy.md`.
-- [ ] Add the privacy policy URL in the Developer Dashboard if required.
-- [ ] Complete privacy practices.
-- [ ] Complete limited-use certification.
-- [ ] Confirm that the listing accurately states local-only storage behavior.
+## Privacy practices
 
-## Permissions
+- [ ] Single purpose, permission justifications, remote code = No (from `listing.md`).
+- [ ] Data usage: no data types ticked; all three certifications ticked.
+- [ ] Privacy policy URL points to `store-assets/privacy-policy.md` on GitHub.
 
-- [ ] Explain `storage`: local state for CSV, templates, generated drafts, and progress.
-- [ ] Explain Gmail and Outlook host permissions: optional Auto-Send compose-window detection.
+## Submit
 
-## Review
+- [ ] Paste the reviewer notes from [`review-notes.md`](review-notes.md).
+- [ ] Submit for review and watch the item status; respond to any policy feedback.
+- [ ] After approval, update the README install section if anything changed.
 
-- [ ] Add reviewer notes from `store-assets/review-notes.md`.
-- [ ] Submit for review.
-- [ ] Monitor review status and respond to any policy feedback.
+## Images
+
+Both scripts load the built extension (`dist/`) unpacked in Chromium and use the files in `examples/`:
+
+```bash
+npm install --no-save playwright && npx playwright install chromium
+node scripts/capture_docs_screenshots.mjs   # README screenshots → docs/images/
+node scripts/capture_store_assets.mjs       # store screenshots and promo tiles → store-assets/
+```
+
+Icons are drawn by `python3 scripts/generate_icons.py` (needs Pillow).
