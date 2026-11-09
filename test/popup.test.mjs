@@ -147,6 +147,9 @@ function loadPopup(state) {
           async set(next) {
             saved.push(next);
             Object.assign(stored, next);
+          },
+          async remove(key) {
+            delete stored[key];
           }
         }
       },
@@ -178,7 +181,8 @@ globalThis.__popupTestApi = {
   buildPlan,
   rowsToCSV,
   reviewRecipients,
-  nextBatchRange,
+  nextBatchIndices,
+  uniqueHeaders,
   mappingToCSV,
   guessEmailColumn,
   handleRecipientFile,
@@ -186,7 +190,7 @@ globalThis.__popupTestApi = {
   applyLanguageSelection,
   t,
   UI_STRINGS,
-  state: () => ({ rows, currentIndex, generated, dismissedNotes, mapping })
+  state: () => ({ rows, openedRows: [...openedRows], generated, dismissedNotes, mapping })
 };`, context);
   return { context, elements, saved, openedTabs, createdElements, blobs, api: context.__popupTestApi };
 }
@@ -609,7 +613,7 @@ test('send test opens the previewed message for my own address only', async () =
   assert.match(openedTabs[0].url, /to=me%40example\.com/);
   assert.match(openedTabs[0].url, /subject=%5BTEST%5D%20Hi%20A/);
   assert.doesNotMatch(openedTabs[0].url, /a%40example\.com/);
-  assert.equal(api.state().currentIndex, 0);
+  assert.equal(api.state().openedRows.length, 0);
   assert.match(elements.get('status').textContent, /Opened a test copy of draft 1, addressed to me@example\.com/);
   assert.equal(elements.get('statusHelp').classList.contains('hidden'), true);
 });
@@ -744,4 +748,131 @@ test('plans carry the batch size', () => {
   assert.equal(api.parsePlan(JSON.stringify({ ...base, settings: { batchSize: 40 } })).batchSize, 40);
   assert.equal(api.parsePlan(JSON.stringify({ ...base, settings: { batchSize: 0 } })).batchSize, 50);
   assert.equal(api.parsePlan(JSON.stringify(base)).batchSize, 50);
+});
+
+// --- Review fixes: progress tracking, concurrency, headers, clearing ---
+
+test('opening a single draft does not make the batch button skip earlier recipients', async () => {
+  const { elements, openedTabs, api } = loadPopup();
+  await generate(elements, FIVE, { batchSize: '10' });
+
+  await elements.get('previewNextBtn').click();
+  await elements.get('previewNextBtn').click();
+  await elements.get('previewNextBtn').click();
+  await elements.get('previewNextBtn').click();
+  await elements.get('openNextBtn').click();
+  assert.match(openedTabs[0].url, /to=e%40example\.com/);
+  assert.equal(elements.get('batchProgress').textContent, '1 of 5 opened');
+  assert.equal(elements.get('openBatchBtn').textContent, 'Open Batch 1 of 1 (drafts 1–4)');
+
+  await elements.get('openBatchBtn').click();
+  assert.deepEqual(openedTabs.slice(1).map(tab => /to=(\w)%40/.exec(tab.url)[1]), ['a', 'b', 'c', 'd']);
+  assert.deepEqual(plain(api.state().openedRows).sort(), [0, 1, 2, 3, 4]);
+  assert.equal(elements.get('openBatchBtn').textContent, 'All batches opened');
+});
+
+test('a batch that stops part-way saves only the drafts that actually opened', async () => {
+  const { elements, openedTabs, context, api } = loadPopup();
+  await generate(elements, FIVE, { batchSize: '3' });
+  const create = context.chrome.tabs.create;
+  context.chrome.tabs.create = (options, callback) => {
+    if (openedTabs.length === 1) throw new Error('Tab limit reached');
+    create(options, callback);
+  };
+
+  await elements.get('openBatchBtn').click();
+  assert.equal(openedTabs.length, 1);
+  assert.match(elements.get('status').textContent, /Stopped after opening 1 of 3 drafts: Tab limit reached/);
+  const stored = (await context.chrome.storage.local.get()).outlookMailMergeState;
+  assert.deepEqual(plain(stored.openedRows), [0]);
+
+  context.chrome.tabs.create = create;
+  assert.equal(elements.get('openBatchBtn').textContent, 'Open Batch 1 of 2 (drafts 2–4)');
+  await elements.get('openBatchBtn').click();
+  assert.deepEqual(openedTabs.map(tab => /to=(\w)%40/.exec(tab.url)[1]), ['a', 'b', 'c', 'd']);
+  assert.deepEqual(plain(api.state().openedRows), [0, 1, 2, 3]);
+});
+
+test('a second batch cannot start while one is still opening', async () => {
+  const { elements, openedTabs } = loadPopup();
+  await generate(elements, FIVE, { batchSize: '2' });
+
+  const first = elements.get('openBatchBtn').click();
+  const second = elements.get('openBatchBtn').click();
+  await Promise.all([first, second]);
+
+  assert.deepEqual(openedTabs.map(tab => /to=(\w)%40/.exec(tab.url)[1]), ['a', 'b']);
+  assert.equal(elements.get('openBatchBtn').textContent, 'Open Batch 2 of 3 (drafts 3–4)');
+});
+
+test('progress saved by 0.1.x is restored as opened rows', async () => {
+  const generated = ['a', 'b', 'c'].map(letter => ({ email: `${letter}@example.com`, cc: '', bcc: '', subject: 'S', body: 'B', row: {} }));
+  const { elements, api } = loadPopup({
+    csvText: 'Name,Email\nA,a@example.com\nB,b@example.com\nC,c@example.com',
+    rows: [{ Name: 'A', Email: 'a@example.com' }, { Name: 'B', Email: 'b@example.com' }, { Name: 'C', Email: 'c@example.com' }],
+    csvHeaders: ['Name', 'Email'],
+    generated,
+    currentIndex: 2,
+    previewIndex: 2
+  });
+
+  await api.restoreState();
+
+  assert.deepEqual(plain(api.state().openedRows), [0, 1]);
+  assert.equal(elements.get('batchProgress').textContent, '2 of 3 opened');
+});
+
+test('clearing an email address in a review note is refused', async () => {
+  const { elements, api } = loadPopup();
+  await generate(elements, REVIEW_CSV, { subject: 'Hi {{FirstName}}' });
+  const before = elements.get('csvText').value;
+
+  await elements.get('reviewPanel').dispatchEvent({ type: 'change', target: { dataset: { row: '3', field: 'Email' }, value: '  ' } });
+
+  assert.equal(elements.get('csvText').value, before);
+  assert.equal(api.state().rows.length, 6);
+  assert.match(elements.get('status').textContent, /email address cannot be empty/);
+});
+
+test('uniqueHeaders never repeats a name, even when the sheet already has "(2)" headers', () => {
+  const { api } = loadPopup();
+  const headers = plain(api.uniqueHeaders(['Name', 'Name', 'Name (2)', 'Email', ''], 5));
+
+  assert.deepEqual(headers, ['Name', 'Name (2)', 'Name (2) (2)', 'Email', 'Column 5']);
+});
+
+test('Clear Data also clears the test email address', async () => {
+  const { elements, context } = loadPopup();
+  await generate(elements, FIVE);
+  elements.get('testEmail').value = 'me@example.com';
+  await elements.get('testEmail').dispatchEvent({ type: 'input' });
+
+  await elements.get('clearStateBtn').click();
+
+  assert.equal(elements.get('testEmail').value, '');
+  const stored = (await context.chrome.storage.local.get()).outlookMailMergeState;
+  assert.equal(stored.testEmail, '');
+});
+
+test('with Auto-Send, the test message does not claim the email was already sent', async () => {
+  const { elements } = loadPopup();
+  await generate(elements, FIVE);
+  elements.get('autoSend').checked = true;
+  elements.get('testEmail').value = 'me@example.com';
+
+  await elements.get('sendTestBtn').click();
+
+  assert.match(elements.get('status').textContent, /^Opened a test copy of email 1 for me@example\.com\. Auto-Send will try to send it/);
+});
+
+test('Excel column picker labels its selects for screen readers', async () => {
+  const { elements, api } = loadPopup();
+  await api.handleRecipientFile(xlsxFile('roster.xlsx', [...ROSTER, { name: 'Second', rows: [['Email'], ['x@example.com']] }]));
+  const html = elements.get('mappingPanel').innerHTML;
+
+  assert.match(html, /<label for="mappingSheet">/);
+  assert.match(html, /<select id="mappingSheet"/);
+  assert.match(html, /<label for="mappingEmail">/);
+  assert.match(html, /<select id="mappingEmail"/);
+  assert.match(html, /role="group" aria-labelledby="mappingColumnsLabel"/);
 });

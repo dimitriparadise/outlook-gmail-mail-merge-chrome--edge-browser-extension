@@ -68,12 +68,20 @@ function xmlAttributes(source) {
   return attrs;
 }
 
-// Joins the <t> runs of a string item, skipping phonetic hints (<rPh>). Tags may carry a namespace prefix.
+// Excel escapes some characters in strings as _xHHHH_ (e.g. _x000D_ for a carriage return).
+// One left-to-right pass, so an escaped underscore (_x005F_x0041_) stays as the literal "_x0041_".
+function decodeExcelEscapes(text) {
+  return text.replace(/_x([0-9a-f]{4})_/gi, (match, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+// Joins the <t> runs of a string item, skipping phonetic hints (<rPh>) and empty <t/> runs.
+// Tags may carry a namespace prefix.
 function xmlText(fragment) {
   return [...String(fragment)
     .replace(/<(?:\w+:)?rPh\b[\s\S]*?<\/(?:\w+:)?rPh>/g, '')
+    .replace(/<(?:\w+:)?t\b[^>]*\/>/g, '')
     .matchAll(/<(?:\w+:)?t\b[^>]*>([\s\S]*?)<\/(?:\w+:)?t>/g)]
-    .map(match => decodeXmlEntities(match[1]))
+    .map(match => decodeExcelEscapes(decodeXmlEntities(match[1])))
     .join('');
 }
 
@@ -84,7 +92,8 @@ function columnIndex(cellRef) {
 }
 
 function cellValue(attrs, inner, sharedStrings) {
-  const raw = /<(?:\w+:)?v\b[^>]*>([\s\S]*?)<\/(?:\w+:)?v>/.exec(inner)?.[1];
+  // An empty <v/> must not swallow the markup after it.
+  const raw = /<(?:\w+:)?v\b[^>]*>([\s\S]*?)<\/(?:\w+:)?v>/.exec(inner.replace(/<(?:\w+:)?v\b[^>]*\/>/g, ''))?.[1];
   switch (attrs.t) {
     case 's':
       return sharedStrings[Number(raw)] ?? '';
@@ -93,6 +102,7 @@ function cellValue(attrs, inner, sharedStrings) {
     case 'b':
       return raw === '1' ? 'TRUE' : 'FALSE';
     case 'str':
+      return decodeExcelEscapes(decodeXmlEntities(raw ?? ''));
     case 'e':
       return decodeXmlEntities(raw ?? '');
     default: {

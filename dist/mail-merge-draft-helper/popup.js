@@ -1,5 +1,8 @@
 let rows = [];
-let currentIndex = 0;
+// Indices of drafts that have been opened, so batches never skip or repeat a recipient.
+let openedRows = new Set();
+// True while drafts are being opened; blocks starting a second run at the same time.
+let isOpening = false;
 let previewIndex = 0;
 let generated = [];
 let csvHeaders = [];
@@ -288,8 +291,15 @@ function renderReviewPanel() {
 }
 
 async function updateRecipientField(index, field, value) {
-  if (!rows[index] || !csvHeaders.includes(field)) return;
-  rows[index][field] = String(value ?? '').trim();
+  if (!rows[index] || !csvHeaders.includes(field)) return false;
+  const nextValue = String(value ?? '').trim();
+  // Blanking an address would drop the row and shift every later draft's position.
+  if (!nextValue && field === (detectEmailHeader(csvHeaders) || 'Email')) {
+    renderReviewPanel();
+    renderStatus(t('emailRequired'), 'error');
+    return false;
+  }
+  rows[index][field] = nextValue;
   if ($('csvText')) $('csvText').value = rowsToCSV(csvHeaders, rows);
   // Re-parse so the derived Email field follows an edited email column.
   rows = parseCSV(getCsvText());
@@ -298,6 +308,7 @@ async function updateRecipientField(index, field, value) {
   renderReviewPanel();
   renderBatchControls();
   await saveState();
+  return true;
 }
 
 function getCsvText() {
@@ -321,7 +332,7 @@ async function saveState() {
     rows,
     csvHeaders,
     generated,
-    currentIndex,
+    openedRows: [...openedRows],
     previewIndex,
     lastBatch,
     dismissedNotes,
@@ -398,8 +409,11 @@ async function restoreState() {
   rows = Array.isArray(state.rows) ? state.rows : [];
   csvHeaders = Array.isArray(state.csvHeaders) ? state.csvHeaders : getHeadersFromRows(rows);
   generated = Array.isArray(state.generated) ? state.generated : [];
-  currentIndex = Number.isInteger(state.currentIndex) ? state.currentIndex : 0;
-  previewIndex = Number.isInteger(state.previewIndex) ? state.previewIndex : currentIndex;
+  openedRows = new Set(Array.isArray(state.openedRows)
+    ? state.openedRows
+    // 0.1.x saved only the highest opened position.
+    : Array.from({ length: Number.isInteger(state.currentIndex) ? state.currentIndex : 0 }, (_, i) => i));
+  previewIndex = Number.isInteger(state.previewIndex) ? state.previewIndex : 0;
   lastBatch = state.lastBatch || null;
   dismissedNotes = Array.isArray(state.dismissedNotes) ? state.dismissedNotes : [];
   listEdited = Boolean(state.listEdited);
@@ -417,7 +431,7 @@ async function restoreState() {
     if ($('sendControls')) $('sendControls').classList.remove('hidden');
     if ($('previewControls')) $('previewControls').classList.remove('hidden');
     syncRangeInputs();
-    renderStatus(t('restored', { done: Math.min(currentIndex, generated.length), total: generated.length }), 'ok');
+    renderStatus(t('restored', { done: openedCount(), total: generated.length }), 'ok');
     renderPreview();
     renderReviewPanel();
   }
@@ -425,7 +439,7 @@ async function restoreState() {
 
 function resetProgress() {
   generated = [];
-  currentIndex = 0;
+  openedRows = new Set();
   previewIndex = 0;
   lastBatch = null;
   if ($('sendControls')) $('sendControls').classList.add('hidden');
@@ -557,7 +571,7 @@ function renderComposeModeHints() {
 
 function syncRangeInputs() {
   const total = generated.length;
-  const next = Math.min(currentIndex + 1, total || 1);
+  const next = (nextBatchIndices(total, 1)[0] ?? total - 1) + 1 || 1;
   if ($('rangeStart')) {
     $('rangeStart').max = total || 1;
     $('rangeStart').value = next;
@@ -664,12 +678,13 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function setRangeOpening(isOpening) {
+function setRangeOpening(opening) {
+  isOpening = opening;
   for (const id of ['openRangeBtn', 'openBatchBtn', 'openNextBtn', 'sendTestBtn']) {
-    if ($(id)) $(id).disabled = isOpening;
+    if ($(id)) $(id).disabled = opening;
   }
-  if (isOpening && $('openRangeBtn')) $('openRangeBtn').textContent = t('openingButton');
-  if (!isOpening) syncDraftActionLabels();
+  if (opening && $('openRangeBtn')) $('openRangeBtn').textContent = t('openingButton');
+  if (!opening) syncDraftActionLabels();
 }
 
 function runPreflight() {
@@ -719,9 +734,17 @@ function getBatchSize() {
   return Number.isInteger(size) && size >= 1 ? Math.min(size, MAX_BATCH_SIZE) : DEFAULT_BATCH_SIZE;
 }
 
-function nextBatchRange(done, total, size) {
-  if (done >= total) return null;
-  return { startIndex: done, endIndex: Math.min(done + size, total) - 1 };
+function openedCount() {
+  return [...openedRows].filter(index => index < generated.length).length;
+}
+
+// The next drafts to open, in list order, skipping any that were already opened.
+function nextBatchIndices(total, size) {
+  const indices = [];
+  for (let i = 0; i < total && indices.length < size; i++) {
+    if (!openedRows.has(i)) indices.push(i);
+  }
+  return indices;
 }
 
 function formatTime(timestamp) {
@@ -731,18 +754,18 @@ function formatTime(timestamp) {
 function renderBatchControls() {
   const total = generated.length;
   const size = getBatchSize();
-  const done = Math.min(currentIndex, total);
-  const next = nextBatchRange(done, total, size);
+  const done = openedCount();
+  const next = nextBatchIndices(total, size);
 
   if ($('batchProgress')) $('batchProgress').textContent = total ? t('batchProgress', { done, total }) : '';
   if ($('openBatchBtn')) {
-    $('openBatchBtn').disabled = !next;
-    $('openBatchBtn').textContent = next
+    $('openBatchBtn').disabled = isOpening || !next.length;
+    $('openBatchBtn').textContent = next.length
       ? tm('openBatch', {
-        n: Math.floor(next.startIndex / size) + 1,
+        n: Math.floor(done / size) + 1,
         count: Math.max(1, Math.ceil(total / size)),
-        start: next.startIndex + 1,
-        end: next.endIndex + 1
+        start: next[0] + 1,
+        end: next[next.length - 1] + 1
       })
       : t('allBatchesDone');
   }
@@ -752,15 +775,13 @@ function renderBatchControls() {
   if ($('resetProgressBtn')) $('resetProgressBtn').classList.toggle('hidden', done === 0);
 }
 
-async function openDraftRange(startIndex, endIndex) {
-  const selected = generated.slice(startIndex, endIndex + 1);
-  const previousIndex = currentIndex;
-  currentIndex = Math.max(currentIndex, endIndex + 1);
-  await saveState();
-
-  const delayMs = Number.parseInt($('batchDelay')?.value || `${DEFAULT_DELAY_MS}`, 10) || DEFAULT_DELAY_MS;
-  let openedCount = 0;
+async function openDraftRange(indices) {
+  if (isOpening || !indices.length) return;
   setRangeOpening(true);
+  const start = indices[0] + 1;
+  const end = indices[indices.length - 1] + 1;
+  const delayMs = Number.parseInt($('batchDelay')?.value || `${DEFAULT_DELAY_MS}`, 10) || DEFAULT_DELAY_MS;
+  let openedNow = 0;
 
   const progressContainer = $('progressContainer');
   const progressBar = $('progressBar');
@@ -768,33 +789,34 @@ async function openDraftRange(startIndex, endIndex) {
   if (progressBar) progressBar.style.width = '0%';
 
   try {
-    for (const [index, msg] of selected.entries()) {
-      renderStatus(tm('openingProgress', { n: index + 1, total: selected.length }), 'ok');
-      await openDraftTab(msg);
-      openedCount += 1;
+    for (const [n, index] of indices.entries()) {
+      renderStatus(tm('openingProgress', { n: n + 1, total: indices.length }), 'ok');
+      await openDraftTab(generated[index]);
+      openedRows.add(index);
+      openedNow += 1;
+      // Save after every tab, so closing the popup mid-batch never marks unopened drafts as done.
+      await saveState();
 
       if (progressBar) {
-        const percent = Math.round((openedCount / selected.length) * 100);
+        const percent = Math.round((openedNow / indices.length) * 100);
         progressBar.style.width = `${percent}%`;
       }
 
-      if (openedCount < selected.length) {
+      if (openedNow < indices.length) {
         await sleep(delayMs);
       }
     }
-    lastBatch = { start: startIndex + 1, end: endIndex + 1, at: Date.now() };
-    previewIndex = clampPreviewIndex(currentIndex);
+    lastBatch = { start, end, at: Date.now() };
+    previewIndex = clampPreviewIndex(nextBatchIndices(generated.length, 1)[0] ?? previewIndex);
     await saveState();
-    syncRangeInputs();
     renderPreview();
-    renderStatus(tm('rangeDone', { count: selected.length, start: startIndex + 1, end: endIndex + 1, total: generated.length }), 'ok');
+    renderStatus(tm('rangeDone', { count: indices.length, start, end, total: generated.length }), 'ok');
   } catch (e) {
-    currentIndex = Math.max(previousIndex, startIndex + openedCount);
     await saveState();
-    syncRangeInputs();
-    renderStatus(tm('rangeStopped', { opened: openedCount, count: selected.length, error: e.message }), 'error');
+    renderStatus(tm('rangeStopped', { opened: openedNow, count: indices.length, error: e.message }), 'error');
   } finally {
     setRangeOpening(false);
+    syncRangeInputs();
     setTimeout(() => {
       if (progressContainer) progressContainer.classList.add('hidden');
     }, 1500);
@@ -810,12 +832,14 @@ function buildTestMessage(msg, testEmail) {
 // --- Excel import with a column picker ---
 
 function uniqueHeaders(headerRow, width) {
-  const seen = new Map();
+  const used = new Set();
   return Array.from({ length: width }, (_, i) => {
     const base = String(headerRow[i] ?? '').trim() || t('columnFallback', { n: i + 1 });
-    const count = (seen.get(base) || 0) + 1;
-    seen.set(base, count);
-    return count > 1 ? `${base} (${count})` : base;
+    let name = base;
+    // Check every name already given out, so "Name, Name, Name (2)" cannot produce two "Name (2)".
+    for (let n = 2; used.has(name); n++) name = `${base} (${n})`;
+    used.add(name);
+    return name;
   });
 }
 
@@ -885,22 +909,22 @@ function renderMappingPanel() {
   const sample = col => String(dataRows.find(row => String(row[col] ?? '').trim() !== '')?.[col] ?? '').replace(/\s+/g, ' ').slice(0, 40);
   const withEmail = mapping.emailColumn >= 0 ? dataRows.filter(row => String(row[mapping.emailColumn] ?? '').trim() !== '').length : 0;
   const sheetPicker = mapping.sheets.length > 1
-    ? `<label>${escapeHtml(t('mappingSheet'))}</label>
-       <select data-mapping="sheet">${mapping.sheets.map((sheet, i) => `<option value="${i}"${i === mapping.sheetIndex ? ' selected' : ''}>${escapeHtml(sheet.name)}</option>`).join('')}</select>`
+    ? `<label for="mappingSheet">${escapeHtml(t('mappingSheet'))}</label>
+       <select id="mappingSheet" data-mapping="sheet">${mapping.sheets.map((sheet, i) => `<option value="${i}"${i === mapping.sheetIndex ? ' selected' : ''}>${escapeHtml(sheet.name)}</option>`).join('')}</select>`
     : '';
 
   panel.classList.remove('hidden');
   panel.innerHTML = `
     <div class="mapping-title">${escapeHtml(t('mappingTitle', { name: mapping.fileName }))}</div>
     ${sheetPicker}
-    <label>${escapeHtml(t('mappingEmail'))}</label>
-    <select data-mapping="email">
+    <label for="mappingEmail">${escapeHtml(t('mappingEmail'))}</label>
+    <select id="mappingEmail" data-mapping="email">
       ${mapping.emailColumn < 0 ? '<option value="-1" selected>—</option>' : ''}
       ${headers.map((header, i) => `<option value="${i}"${i === mapping.emailColumn ? ' selected' : ''}>${escapeHtml(header)}</option>`).join('')}
     </select>
-    <label>${escapeHtml(t('mappingColumns'))}</label>
+    <label id="mappingColumnsLabel">${escapeHtml(t('mappingColumns'))}</label>
     <p class="hint">${escapeHtml(t('mappingColumnsHint'))}</p>
-    <div class="mapping-columns">
+    <div class="mapping-columns" role="group" aria-labelledby="mappingColumnsLabel">
       ${headers.map((header, i) => (i === mapping.emailColumn ? '' : `
         <label class="mapping-column">
           <input type="checkbox" data-mapping="column" value="${i}"${mapping.columns.has(i) ? ' checked' : ''} />
@@ -1222,8 +1246,9 @@ if ($('reviewPanel')) {
   $('reviewPanel').addEventListener('change', async (event) => {
     const { row, field } = event.target?.dataset || {};
     if (row === undefined || !field) return;
-    await updateRecipientField(Number(row), field, event.target.value);
-    renderStatus(t('recipientUpdated', { n: Number(row) + 1 }), 'ok');
+    if (await updateRecipientField(Number(row), field, event.target.value)) {
+      renderStatus(t('recipientUpdated', { n: Number(row) + 1 }), 'ok');
+    }
   });
   $('reviewPanel').addEventListener('click', async (event) => {
     const key = event.target?.dataset?.dismiss;
@@ -1325,6 +1350,7 @@ if ($('clearStateBtn')) {
     if ($('templatePreset')) $('templatePreset').value = '';
     if ($('batchDelay')) $('batchDelay').value = '1000';
     if ($('batchSize')) $('batchSize').value = String(DEFAULT_BATCH_SIZE);
+    if ($('testEmail')) $('testEmail').value = '';
     if ($('subject')) $('subject').value = TEMPLATE_PRESETS.courseReminder.subject;
     if ($('cc')) $('cc').value = '';
     if ($('bcc')) $('bcc').value = '';
@@ -1349,7 +1375,6 @@ if ($('loadBtn')) {
       makeMessages();
       const issues = runPreflight();
       // Regenerating after a template edit keeps progress, so a batch is never opened twice.
-      currentIndex = Math.min(currentIndex, generated.length);
       previewIndex = clampPreviewIndex(previewIndex);
       await saveState();
       if ($('sendControls')) $('sendControls').classList.remove('hidden');
@@ -1360,7 +1385,7 @@ if ($('loadBtn')) {
       renderReviewPanel();
       const notes = reviewRecipients(rows, csvHeaders, currentTemplates());
       const lines = [tm('ready', { count: generated.length })];
-      if (currentIndex > 0) lines.push(t('progressKept', { done: currentIndex, total: generated.length }));
+      if (openedCount() > 0) lines.push(t('progressKept', { done: openedCount(), total: generated.length }));
       if (notes.length) lines.push(t('readyReviewNote', { count: notes.length }));
       renderStatus(lines.join('\n') + renderPreflightIssues(issues), issues.length ? 'error' : 'ok');
     } catch (e) {
@@ -1389,6 +1414,7 @@ if ($('previewNextBtn')) {
 
 if ($('sendTestBtn')) {
   $('sendTestBtn').addEventListener('click', async () => {
+    if (isOpening) return;
     if (!generated.length) return renderStatus(t('generateFirst'), 'error');
     const testEmail = ($('testEmail')?.value ?? '').trim();
     if (!isValidEmail(testEmail)) return renderStatus(t('testEmailInvalid'), 'error');
@@ -1406,16 +1432,17 @@ if ($('sendTestBtn')) {
 
 if ($('openBatchBtn')) {
   $('openBatchBtn').addEventListener('click', async () => {
-    if (!readyToOpen()) return;
-    const range = nextBatchRange(Math.min(currentIndex, generated.length), generated.length, getBatchSize());
-    if (!range) return renderStatus(t('allBatchesDone'), 'ok');
-    await openDraftRange(range.startIndex, range.endIndex);
+    if (isOpening || !readyToOpen()) return;
+    const indices = nextBatchIndices(generated.length, getBatchSize());
+    if (!indices.length) return renderStatus(t('allBatchesDone'), 'ok');
+    await openDraftRange(indices);
   });
 }
 
 if ($('resetProgressBtn')) {
   $('resetProgressBtn').addEventListener('click', async () => {
-    currentIndex = 0;
+    if (isOpening) return;
+    openedRows = new Set();
     lastBatch = null;
     syncRangeInputs();
     await saveState();
@@ -1425,23 +1452,19 @@ if ($('resetProgressBtn')) {
 
 if ($('openNextBtn')) {
   $('openNextBtn').addEventListener('click', async () => {
-    if (!readyToOpen()) return;
+    if (isOpening || !readyToOpen()) return;
     previewIndex = clampPreviewIndex(previewIndex);
     const msg = generated[previewIndex];
-    const previousIndex = currentIndex;
-    currentIndex = Math.max(currentIndex, previewIndex + 1);
-    await saveState();
 
     try {
       await openDraftTab(msg);
+      openedRows.add(previewIndex);
       await saveState();
       syncRangeInputs();
       syncDraftActionLabels();
       renderPreview();
       renderStatus(tm('openedOne', { n: previewIndex + 1, total: generated.length, email: msg.email }), 'ok');
     } catch (e) {
-      currentIndex = previousIndex;
-      await saveState();
       syncRangeInputs();
       renderStatus(tm('openFailed', { error: e.message }), 'error');
     }
@@ -1450,14 +1473,14 @@ if ($('openNextBtn')) {
 
 if ($('openRangeBtn')) {
   $('openRangeBtn').addEventListener('click', async () => {
-    if (!readyToOpen()) return;
+    if (isOpening || !readyToOpen()) return;
     let range;
     try {
       range = getSelectedRange();
     } catch (e) {
       return renderStatus(e.message, 'error');
     }
-    await openDraftRange(range.startIndex, range.endIndex);
+    await openDraftRange(Array.from({ length: range.endIndex - range.startIndex + 1 }, (_, k) => range.startIndex + k));
   });
 }
 

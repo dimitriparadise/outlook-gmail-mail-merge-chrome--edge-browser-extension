@@ -72,3 +72,17 @@ test('readXlsx rejects files that are not Excel workbooks', async () => {
   await assert.rejects(() => readXlsx(new TextEncoder().encode('Name,Email\nAda,ada@example.com')), /Not a zip file/);
   await assert.rejects(() => readXlsx(zip({ 'word/document.xml': '<doc/>' })), /Not an Excel workbook/);
 });
+
+test('readXlsx skips empty <t/> runs and decodes _xHHHH_ escapes once', async () => {
+  const readXlsx = loadXlsx();
+  const file = zip({
+    'xl/workbook.xml': workbookXml('<sheet name="S" sheetId="1" r:id="rId1"/>'),
+    'xl/_rels/workbook.xml.rels': '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>',
+    'xl/sharedStrings.xml': '<sst><si><r><t/></r><r><t>Ada</t></r></si><si><t>Line_x000D_break</t></si><si><t>_x005F_x0041_</t></si></sst>',
+    'xl/worksheets/sheet1.xml': '<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>2</v></c><c r="D1" t="inlineStr"><is><t/></is></c><c r="E1"><v/></c><c r="F1"><v>7</v></c></row></sheetData></worksheet>'
+  });
+
+  const [sheet] = await readXlsx(file);
+
+  assert.deepEqual(plain(sheet.rows), [['Ada', 'Line\rbreak', '_x0041_', '', '', '7']]);
+});

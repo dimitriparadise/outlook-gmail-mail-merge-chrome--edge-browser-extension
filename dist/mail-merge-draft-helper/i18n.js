@@ -66,7 +66,7 @@ const UI_STRINGS = {
     sendTestSend: 'Send Test to Me',
     testEmailInvalid: 'Enter your own email address to send a test.',
     testOpened: 'Opened a test copy of draft {n}, addressed to {email}.',
-    testOpenedSend: 'Sent a test copy of email {n} to {email}. Check your inbox.',
+    testOpenedSend: 'Opened a test copy of email {n} for {email}. Auto-Send will try to send it; check your inbox to confirm it arrived.',
     testFailed: 'Could not open the test: {error}',
 
     batchTitle: 'Send in batches',
@@ -152,6 +152,7 @@ const UI_STRINGS = {
     noteMultiWord: '{name} has several words. Check the greeting.',
     noteDomain: 'Email domain {domain} differs from most recipients ({main}).',
     recipientUpdated: 'Row {n} updated.',
+    emailRequired: 'An email address cannot be empty. To leave someone out, remove them from the list and load it again.',
 
     planImportedNamed: 'Plan "{name}" imported: {count} recipients. Auto-Send is off. Review the template, then click "Generate Drafts".',
     planImportedFile: 'Plan from "{name}" imported: {count} recipients. Auto-Send is off. Review the template, then click "Generate Drafts".',
@@ -227,7 +228,7 @@ const UI_STRINGS = {
     sendTestSend: '发送测试给我',
     testEmailInvalid: '请填写你自己的邮箱地址，再发送测试。',
     testOpened: '已打开第 {n} 封的测试草稿，收件人是 {email}。',
-    testOpenedSend: '已把第 {n} 封的测试发送到 {email}，请查收。',
+    testOpenedSend: '已为 {email} 打开第 {n} 封的测试邮件，自动发送会尝试发出。请查收邮箱确认是否收到。',
     testFailed: '无法打开测试邮件：{error}',
 
     batchTitle: '分批发送',
@@ -313,6 +314,7 @@ const UI_STRINGS = {
     noteMultiWord: '{name} 有多个词，请检查称呼是否合适。',
     noteDomain: '邮箱后缀 {domain} 和大多数收件人（{main}）不同。',
     recipientUpdated: '第 {n} 行已更新。',
+    emailRequired: '邮箱地址不能为空。如果要去掉某位收件人，请从名单中删除后重新载入。',
 
     planImportedNamed: '已导入方案 "{name}"：{count} 位收件人。自动发送已关闭。检查模板后，点击"生成草稿"。',
     planImportedFile: '已从 "{name}" 导入方案：{count} 位收件人。自动发送已关闭。检查模板后，点击"生成草稿"。',
@@ -388,7 +390,7 @@ const UI_STRINGS = {
     sendTestSend: 'Enviarme una prueba',
     testEmailInvalid: 'Escribe tu propio correo para enviar una prueba.',
     testOpened: 'Se abrió una copia de prueba del borrador {n}, dirigida a {email}.',
-    testOpenedSend: 'Se envió una copia de prueba del correo {n} a {email}. Revisa tu bandeja de entrada.',
+    testOpenedSend: 'Se abrió una copia de prueba del correo {n} para {email}. El envío automático intentará enviarla; revisa tu bandeja de entrada para confirmar que llegó.',
     testFailed: 'No se pudo abrir la prueba: {error}',
 
     batchTitle: 'Enviar por lotes',
@@ -474,6 +476,7 @@ const UI_STRINGS = {
     noteMultiWord: '{name} tiene varias palabras. Revisa el saludo.',
     noteDomain: 'El dominio {domain} es distinto al de la mayoría ({main}).',
     recipientUpdated: 'Fila {n} actualizada.',
+    emailRequired: 'La dirección de correo no puede quedar vacía. Para excluir a alguien, quítalo de la lista y vuelve a cargarla.',
 
     planImportedNamed: 'Plan "{name}" importado: {count} destinatarios. El envío automático está desactivado. Revisa la plantilla y pulsa "Generar borradores".',
     planImportedFile: 'Plan de "{name}" importado: {count} destinatarios. El envío automático está desactivado. Revisa la plantilla y pulsa "Generar borradores".',
