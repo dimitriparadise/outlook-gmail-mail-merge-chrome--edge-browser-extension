@@ -1,0 +1,14 @@
+{
+  "extName": {
+    "message": "Mail Merge Draft Helper",
+    "description": "Extension name; kept the same in every language."
+  },
+  "extDescription": {
+    "message": "从 Excel 或 CSV 名单生成个性化的 Outlook 和 Gmail 邮件。逐封预览、自动检查、分批发送，无需登录。",
+    "description": "Chrome Web Store summary, at most 132 characters."
+  },
+  "actionTitle": {
+    "message": "邮件合并",
+    "description": "Tooltip on the toolbar button."
+  }
+}

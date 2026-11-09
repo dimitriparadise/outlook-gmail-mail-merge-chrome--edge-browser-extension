@@ -18,6 +18,7 @@ cp "$ROOT/xlsx.js" "$PACKAGE_DIR/"
 cp "$ROOT/popup.js" "$PACKAGE_DIR/"
 cp "$ROOT/content.js" "$PACKAGE_DIR/"
 cp "$ROOT/icons"/icon-*.png "$PACKAGE_DIR/icons/"
+cp -R "$ROOT/_locales" "$PACKAGE_DIR/"
 
 rm -f "$ZIP_PATH"
 (cd "$PACKAGE_DIR" && zip -qr "$ZIP_PATH" .)

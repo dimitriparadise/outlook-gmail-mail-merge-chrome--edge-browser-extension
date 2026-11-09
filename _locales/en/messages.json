@@ -1,0 +1,14 @@
+{
+  "extName": {
+    "message": "Mail Merge Draft Helper",
+    "description": "Extension name; kept the same in every language."
+  },
+  "extDescription": {
+    "message": "Personalized Outlook and Gmail emails from Excel or CSV lists. Preview, check, and send in batches. No sign-in needed.",
+    "description": "Chrome Web Store summary, at most 132 characters."
+  },
+  "actionTitle": {
+    "message": "Mail Merge",
+    "description": "Tooltip on the toolbar button."
+  }
+}

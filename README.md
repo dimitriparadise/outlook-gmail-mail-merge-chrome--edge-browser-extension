@@ -290,6 +290,8 @@ node --test
 - `popup.html` / `popup.js` / `popup.css`: the popup. `xlsx.js` reads Excel files; `content.js` is the Auto-Send script.
 - `i18n.js` holds every popup string in English, Chinese, and Spanish. Add a new string to all three languages; a test checks that the keys and `{placeholders}` match.
 - `build_release.sh` copies the extension files to `dist/mail-merge-draft-helper/` and creates `dist/mail-merge-draft-helper-<version>.zip` using the version in `manifest.json`.
+- `_locales/` holds the extension name and store summary in each language.
+- Screenshots are generated from the real popup, with the extension from `dist/` loaded in Chromium (`npm install --no-save playwright && npx playwright install chromium` first): `node scripts/capture_docs_screenshots.mjs` refreshes `docs/images/`, and `node scripts/capture_store_assets.mjs` refreshes the store screenshots and promo tiles in `store-assets/`.
 
 Publishing notes for the Chrome Web Store (listing text, screenshots, review notes, checklist) are in [`store-assets/`](store-assets/). Official references:
 

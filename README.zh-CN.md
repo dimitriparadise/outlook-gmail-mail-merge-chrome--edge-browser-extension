@@ -290,6 +290,8 @@ node --test
 - `popup.html` / `popup.js` / `popup.css`：弹窗。`xlsx.js` 负责读取 Excel；`content.js` 是自动发送脚本。
 - `i18n.js` 存放弹窗里所有的中英西三语文字。新增文字时三种语言都要加；有测试会检查三种语言的键和 `{占位符}` 是否一致。
 - `build_release.sh` 会把扩展文件复制到 `dist/mail-merge-draft-helper/`，并按 `manifest.json` 里的版本号生成 `dist/mail-merge-draft-helper-<版本号>.zip`。
+- `_locales/` 存放各语言的扩展名称和商店简介。
+- 截图都是用真实弹窗生成的，会在 Chromium 里加载 `dist/` 中的扩展（先运行 `npm install --no-save playwright && npx playwright install chromium`）：`node scripts/capture_docs_screenshots.mjs` 更新 `docs/images/`，`node scripts/capture_store_assets.mjs` 更新 `store-assets/` 里的商店截图和宣传图。
 
 上架 Chrome 应用商店的资料（商店描述、截图、审核说明、检查清单）在 [`store-assets/`](store-assets/) 里。官方文档：
 
